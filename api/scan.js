@@ -37,10 +37,21 @@ Return this exact structure:
   ]
 }
 
+PRIORITISE THESE VIBE-CODING VULNERABILITIES (the ones that cause real breaches):
+1. Missing Row-Level Security (RLS) — Supabase/Postgres tables without RLS policies, or app-level-only filtering where the database itself does not enforce that user A cannot read user B's data. This is the #1 cause of vibe-coded app breaches. Flag as CRITICAL.
+2. Open or misconfigured databases — Supabase/Firebase with public read/write, no auth on database access. Flag as CRITICAL.
+3. Exposed secrets — hardcoded API keys, tokens, database passwords, JWT secrets. Flag as CRITICAL.
+4. Broken authentication & access control — missing auth checks, client-side-only authorization, inverted access logic. Flag as CRITICAL.
+5. Hallucinated or non-existent packages — imports of packages that do not exist (slopsquatting risk). Flag as WARNING.
+6. SQL injection, XSS, path traversal. Flag as CRITICAL.
+7. Prompt-injection risks — if the code reads external content (READMEs, issues, user input, fetched web pages) and passes it to an AI/LLM API without sanitisation, flag it. Indirect prompt injection has an 85% success rate and almost no tool checks for it. Flag as CRITICAL.
+8. Logic errors — code that runs but does the wrong thing: inverted conditions, off-by-one errors, wrong comparison operators, incorrect access-control logic. Founders cannot spot these because they did not write the code. Flag as WARNING.
+9. Code bloat — dead code, duplicated logic, unnecessary complexity, fake/stubbed implementations that look real but do nothing. Flag as INFO.
+
 SEVERITY RULES:
-- critical: security vulnerabilities, exposed secrets, SQL injection, XSS, path traversal, auth bypass, anything that could cause data breach or hack
-- warning: missing error handling, missing await on async calls, null pointer risks, weak comparisons, deprecated functions, logic bugs
-- info: code quality improvements, best practices, performance suggestions
+- critical: RLS issues, open databases, exposed secrets, auth bypass, SQL injection, XSS, path traversal — anything causing data breach
+- warning: missing error handling, missing await, null risks, weak comparisons, hallucinated packages, logic bugs
+- info: code quality, best practices, performance
 
 SCORING:
 - Start at 100
@@ -77,7 +88,22 @@ export default async function handler(req) {
 
   try {
     const body = await req.json();
-    const { code, language } = body;
+    let { code, language, githubUrl } = body;
+
+    // ── GITHUB URL SCANNING ──
+    // If a GitHub URL is provided, fetch the file content from it
+    if (githubUrl && typeof githubUrl === 'string') {
+      try {
+        const fetched = await fetchGitHubCode(githubUrl);
+        code = fetched.code;
+        language = language || fetched.language;
+      } catch (ghErr) {
+        return new Response(JSON.stringify({ error: ghErr.message || 'Could not fetch code from that GitHub URL. Make sure it is a public file or repo.' }), {
+          status: 400,
+          headers: corsHeaders(),
+        });
+      }
+    }
 
     // Basic validation
     if (!code || typeof code !== 'string') {
@@ -88,10 +114,8 @@ export default async function handler(req) {
     }
 
     if (code.length > 50000) {
-      return new Response(JSON.stringify({ error: 'Code too large. Maximum 50,000 characters.' }), {
-        status: 400,
-        headers: corsHeaders(),
-      });
+      // Truncate very large files rather than rejecting
+      code = code.slice(0, 50000);
     }
 
     // Call Claude API securely from the server
@@ -165,6 +189,52 @@ export default async function handler(req) {
       headers: corsHeaders(),
     });
   }
+}
+
+
+// ── GITHUB CODE FETCHER ──
+// Converts a GitHub URL into raw code. Supports:
+//   - Direct file URLs: github.com/user/repo/blob/main/file.js
+//   - Raw URLs: raw.githubusercontent.com/...
+async function fetchGitHubCode(url) {
+  let rawUrl = url.trim();
+
+  // Convert github.com/blob URLs to raw.githubusercontent.com
+  if (rawUrl.includes('github.com') && rawUrl.includes('/blob/')) {
+    rawUrl = rawUrl
+      .replace('github.com', 'raw.githubusercontent.com')
+      .replace('/blob/', '/');
+  }
+
+  // If it's a bare repo URL (no specific file), try common entry files
+  const isBareRepo = /github\.com\/[^\/]+\/[^\/]+\/?$/.test(rawUrl);
+  if (isBareRepo) {
+    throw new Error('Please paste a link to a specific file (e.g. .../blob/main/app.js), not the whole repo. Full-repo scanning is coming soon.');
+  }
+
+  const res = await fetch(rawUrl, {
+    headers: { 'User-Agent': 'VibeSafe-Scanner' },
+  });
+
+  if (!res.ok) {
+    throw new Error('Could not access that file. Make sure the repository is public and the URL points to a specific file.');
+  }
+
+  const fetchedCode = await res.text();
+
+  if (!fetchedCode || fetchedCode.length < 5) {
+    throw new Error('That file appears to be empty.');
+  }
+
+  // Detect language from file extension
+  let language = 'code';
+  if (rawUrl.endsWith('.js') || rawUrl.endsWith('.jsx')) language = 'JavaScript';
+  else if (rawUrl.endsWith('.ts') || rawUrl.endsWith('.tsx')) language = 'TypeScript';
+  else if (rawUrl.endsWith('.py')) language = 'Python';
+  else if (rawUrl.endsWith('.java')) language = 'Java';
+  else if (rawUrl.endsWith('.cs')) language = '.NET / C#';
+
+  return { code: fetchedCode, language: language };
 }
 
 function corsHeaders() {
