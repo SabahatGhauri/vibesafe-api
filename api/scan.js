@@ -1,10 +1,6 @@
-// VibeSafe Scan API — Vercel Edge Function
-// Your Anthropic API key is stored securely in Vercel environment variables
+// VibeSafe Scan API — Vercel Serverless Function (Node.js)
+// Your Anthropic API key is stored securely in Vercel environment variables.
 // Users never see it. Their code is never stored.
-
-export const config = { runtime: 'edge' };
-
-const ALLOWED_ORIGIN = 'https://www.vibesafe.info';
 
 const SCAN_SYSTEM_PROMPT = `You are VibeSafe — an expert code security scanner built for non-technical founders.
 
@@ -64,61 +60,81 @@ SCORING:
 Be thorough. A non-technical founder is trusting you with the security of their product.
 Only return the JSON object. Nothing else.`;
 
-export default async function handler(req) {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Max-Age': '86400',
-      },
-    });
+// ── GITHUB CODE FETCHER ──
+async function fetchGitHubCode(url) {
+  let rawUrl = url.trim();
+
+  if (rawUrl.includes('github.com') && rawUrl.includes('/blob/')) {
+    rawUrl = rawUrl
+      .replace('github.com', 'raw.githubusercontent.com')
+      .replace('/blob/', '/');
   }
 
-  // Only allow POST
+  const isBareRepo = /github\.com\/[^\/]+\/[^\/]+\/?$/.test(rawUrl);
+  if (isBareRepo) {
+    throw new Error('Please paste a link to a specific file (e.g. .../blob/main/app.js), not the whole repo. Full-repo scanning is coming soon.');
+  }
+
+  const res = await fetch(rawUrl, { headers: { 'User-Agent': 'VibeSafe-Scanner' } });
+  if (!res.ok) {
+    throw new Error('Could not access that file. Make sure the repository is public and the URL points to a specific file.');
+  }
+
+  const fetchedCode = await res.text();
+  if (!fetchedCode || fetchedCode.length < 5) {
+    throw new Error('That file appears to be empty.');
+  }
+
+  let language = 'code';
+  if (rawUrl.endsWith('.js') || rawUrl.endsWith('.jsx')) language = 'JavaScript';
+  else if (rawUrl.endsWith('.ts') || rawUrl.endsWith('.tsx')) language = 'TypeScript';
+  else if (rawUrl.endsWith('.py')) language = 'Python';
+  else if (rawUrl.endsWith('.java')) language = 'Java';
+  else if (rawUrl.endsWith('.cs')) language = '.NET / C#';
+
+  return { code: fetchedCode, language: language };
+}
+
+// ── MAIN HANDLER (Node.js serverless) ──
+export default async function handler(req, res) {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: corsHeaders(),
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const body = await req.json();
+    const body = req.body || {};
     let { code, language, githubUrl } = body;
 
-    // ── GITHUB URL SCANNING ──
-    // If a GitHub URL is provided, fetch the file content from it
+    // GitHub URL scanning
     if (githubUrl && typeof githubUrl === 'string') {
       try {
         const fetched = await fetchGitHubCode(githubUrl);
         code = fetched.code;
         language = language || fetched.language;
       } catch (ghErr) {
-        return new Response(JSON.stringify({ error: ghErr.message || 'Could not fetch code from that GitHub URL. Make sure it is a public file or repo.' }), {
-          status: 400,
-          headers: corsHeaders(),
-        });
+        return res.status(400).json({ error: ghErr.message || 'Could not fetch code from that GitHub URL.' });
       }
     }
 
-    // Basic validation
     if (!code || typeof code !== 'string') {
-      return new Response(JSON.stringify({ error: 'No code provided' }), {
-        status: 400,
-        headers: corsHeaders(),
-      });
+      return res.status(400).json({ error: 'No code provided' });
     }
 
     if (code.length > 50000) {
-      // Truncate very large files rather than rejecting
       code = code.slice(0, 50000);
     }
 
-    // Call Claude API securely from the server
+    // Call Claude API securely
     const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -140,108 +156,31 @@ export default async function handler(req) {
     });
 
     if (!claudeResponse.ok) {
-      const err = await claudeResponse.text();
-      console.error('Claude API error:', err);
-      return new Response(JSON.stringify({ error: 'Scan service temporarily unavailable. Please try again.' }), {
-        status: 502,
-        headers: corsHeaders(),
-      });
+      const errText = await claudeResponse.text();
+      console.error('Claude API error:', errText);
+      return res.status(502).json({ error: 'Scan service temporarily unavailable. Please try again.' });
     }
 
     const claudeData = await claudeResponse.json();
-    const rawText = claudeData.content?.[0]?.text;
+    const rawText = claudeData.content && claudeData.content[0] && claudeData.content[0].text;
 
     if (!rawText) {
-      return new Response(JSON.stringify({ error: 'No response from scan engine' }), {
-        status: 500,
-        headers: corsHeaders(),
-      });
+      return res.status(500).json({ error: 'No response from scan engine' });
     }
 
-    // Parse the JSON response from Claude
     let scanResult;
     try {
-      // Strip any accidental markdown fences
       const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       scanResult = JSON.parse(cleaned);
     } catch (parseErr) {
       console.error('Parse error:', parseErr, 'Raw:', rawText);
-      return new Response(JSON.stringify({ error: 'Failed to parse scan results. Please try again.' }), {
-        status: 500,
-        headers: corsHeaders(),
-      });
+      return res.status(500).json({ error: 'Failed to parse scan results. Please try again.' });
     }
 
-    // Return results — code is never stored
-    return new Response(JSON.stringify(scanResult), {
-      status: 200,
-      headers: {
-        ...corsHeaders(),
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store', // Never cache — each scan is unique
-      },
-    });
+    return res.status(200).json(scanResult);
 
   } catch (err) {
     console.error('Scan error:', err);
-    return new Response(JSON.stringify({ error: 'An unexpected error occurred. Please try again.' }), {
-      status: 500,
-      headers: corsHeaders(),
-    });
+    return res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
   }
-}
-
-
-// ── GITHUB CODE FETCHER ──
-// Converts a GitHub URL into raw code. Supports:
-//   - Direct file URLs: github.com/user/repo/blob/main/file.js
-//   - Raw URLs: raw.githubusercontent.com/...
-async function fetchGitHubCode(url) {
-  let rawUrl = url.trim();
-
-  // Convert github.com/blob URLs to raw.githubusercontent.com
-  if (rawUrl.includes('github.com') && rawUrl.includes('/blob/')) {
-    rawUrl = rawUrl
-      .replace('github.com', 'raw.githubusercontent.com')
-      .replace('/blob/', '/');
-  }
-
-  // If it's a bare repo URL (no specific file), try common entry files
-  const isBareRepo = /github\.com\/[^\/]+\/[^\/]+\/?$/.test(rawUrl);
-  if (isBareRepo) {
-    throw new Error('Please paste a link to a specific file (e.g. .../blob/main/app.js), not the whole repo. Full-repo scanning is coming soon.');
-  }
-
-  const res = await fetch(rawUrl, {
-    headers: { 'User-Agent': 'VibeSafe-Scanner' },
-  });
-
-  if (!res.ok) {
-    throw new Error('Could not access that file. Make sure the repository is public and the URL points to a specific file.');
-  }
-
-  const fetchedCode = await res.text();
-
-  if (!fetchedCode || fetchedCode.length < 5) {
-    throw new Error('That file appears to be empty.');
-  }
-
-  // Detect language from file extension
-  let language = 'code';
-  if (rawUrl.endsWith('.js') || rawUrl.endsWith('.jsx')) language = 'JavaScript';
-  else if (rawUrl.endsWith('.ts') || rawUrl.endsWith('.tsx')) language = 'TypeScript';
-  else if (rawUrl.endsWith('.py')) language = 'Python';
-  else if (rawUrl.endsWith('.java')) language = 'Java';
-  else if (rawUrl.endsWith('.cs')) language = '.NET / C#';
-
-  return { code: fetchedCode, language: language };
-}
-
-function corsHeaders() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json',
-  };
 }
