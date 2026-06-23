@@ -58,11 +58,14 @@ SCORING:
 - Minimum score is 5
 - If no issues found, score is 100
 
-FIXED CODE (the "fixedCode" field):
+FIXED CODE (the "fixedCode" field) — THIS IS CRITICAL:
 - Return the COMPLETE corrected file, ready to paste and run — never snippets or partial code.
-- Apply EVERY issue's fix together in one coherent rewrite so overlapping fixes do not conflict.
-- Keep the same programming language and overall structure; change only what is necessary to fix the issues.
+- Fix EVERY critical and warning issue you listed, plus any other obvious security or quality problem, in one coherent rewrite.
+- The fixedCode MUST be clean enough to pass a fresh security scan with a score of 95 or higher. If you would still flag the fixedCode for a critical or warning, fix that too before returning it.
+- Leave NO critical or warning unresolved. Only minor best-practice (info) items may remain.
+- Keep the same programming language and overall structure; change only what is necessary.
 - For secrets, replace hardcoded values with environment-variable reads (e.g. process.env.X / os.environ.get('X')).
+- Add proper error handling, awaits, input validation, and parameterised queries wherever the issues require it.
 - Output the fixedCode as a normal JSON string (escape newlines as \\n). Do NOT wrap it in markdown code fences.
 - If the code has no issues, set "fixedCode" to the original code unchanged.
 
