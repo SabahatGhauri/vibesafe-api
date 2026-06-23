@@ -30,7 +30,8 @@ Return this exact structure:
   "passed": [
     "<one thing the code does well>",
     "<another positive if applicable>"
-  ]
+  ],
+  "fixedCode": "<the COMPLETE corrected version of the submitted code with ALL issues fixed together as one coherent file>"
 }
 
 PRIORITISE THESE VIBE-CODING VULNERABILITIES (the ones that cause real breaches):
@@ -56,6 +57,14 @@ SCORING:
 - Subtract 2 for each info
 - Minimum score is 5
 - If no issues found, score is 100
+
+FIXED CODE (the "fixedCode" field):
+- Return the COMPLETE corrected file, ready to paste and run — never snippets or partial code.
+- Apply EVERY issue's fix together in one coherent rewrite so overlapping fixes do not conflict.
+- Keep the same programming language and overall structure; change only what is necessary to fix the issues.
+- For secrets, replace hardcoded values with environment-variable reads (e.g. process.env.X / os.environ.get('X')).
+- Output the fixedCode as a normal JSON string (escape newlines as \\n). Do NOT wrap it in markdown code fences.
+- If the code has no issues, set "fixedCode" to the original code unchanged.
 
 Be thorough. A non-technical founder is trusting you with the security of their product.
 Only return the JSON object. Nothing else.`;
@@ -144,7 +153,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
+        max_tokens: 16000, // raised from 4000 so the full fixedCode file isn't truncated (which would break JSON parsing)
         system: SCAN_SYSTEM_PROMPT,
         messages: [
           {
