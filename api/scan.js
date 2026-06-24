@@ -24,7 +24,8 @@ Return this exact structure:
       "impact": "<what happens if this is ignored — one sentence>",
       "before": "<the exact problematic code snippet, single line>",
       "after": "<the fixed version of that line>",
-      "fix_explanation": "<plain-English explanation of the fix in one sentence>"
+      "fix_explanation": "<plain-English explanation of the fix in one sentence>",
+      "owasp": "<the OWASP Top 10 (2021) category this maps to, e.g. 'A01:2021 Broken Access Control', 'A03:2021 Injection', 'A07:2021 Identification & Authentication Failures'. Use empty string if it is not a security issue.>"
     }
   ],
   "passed": [
