@@ -50,13 +50,15 @@ SEVERITY RULES:
 - warning: missing error handling, missing await, null risks, weak comparisons, hallucinated packages, logic bugs
 - info: code quality, best practices, performance
 
-SCORING:
+SCORING (security-focused — the score means "is this safe to ship", not "is this stylistically perfect"):
 - Start at 100
-- Subtract 18 for each critical issue
-- Subtract 8 for each warning
-- Subtract 2 for each info
+- Subtract 22 for each critical issue (real breach risk: secrets, injection, auth bypass, RLS)
+- Subtract 7 for each warning (will break or misbehave: missing error handling, missing await, logic bugs)
+- Do NOT reduce the score for info items. Best-practice / style / minor suggestions are listed for the user but must NOT lower the score.
+- So: code with no criticals and no warnings scores 100, even if it has info suggestions.
 - Minimum score is 5
 - If no issues found, score is 100
+- Do NOT manufacture trivial issues to pad the list. Only report genuine security, correctness, or reliability problems. If the code is secure and works, say so with a high score.
 
 FIXED CODE (the "fixedCode" field) — THIS IS CRITICAL:
 - Return the COMPLETE corrected file, ready to paste and run — never snippets or partial code.
@@ -157,6 +159,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 16000, // raised from 4000 so the full fixedCode file isn't truncated (which would break JSON parsing)
+        temperature: 0.2,  // low temperature → consistent scans (less re-flagging of new minor issues each pass, so auto-fix converges)
         system: SCAN_SYSTEM_PROMPT,
         messages: [
           {
