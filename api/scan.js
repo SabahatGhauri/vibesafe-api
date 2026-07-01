@@ -163,6 +163,77 @@ async function fetchGitHubCode(url, githubToken) {
   return { code: fetchedCode, language };
 }
 
+// ── CVE PACKAGE CHECKER (OSV.dev — free, no auth) ──
+function extractPackages(code, language) {
+  const packages = new Set();
+  const lang = (language || '').toLowerCase();
+
+  if (lang === 'python') {
+    // import X, from X import Y
+    const matches = [...code.matchAll(/^\s*(?:import|from)\s+([a-zA-Z0-9_\-]+)/gm)];
+    matches.forEach(m => {
+      const name = m[1].split('.')[0];
+      if (!['os','sys','re','json','math','time','datetime','pathlib','typing','collections','itertools','functools','io','abc','copy','enum','logging','threading','subprocess','socket','hashlib','base64','urllib','http','email','html','xml','csv','sqlite3','pickle','struct','random','string','traceback','warnings','contextlib','dataclasses','uuid','hmac','secrets','gc','inspect','ast','dis'].includes(name))
+        packages.add({ name, ecosystem: 'PyPI' });
+    });
+  } else {
+    // JS/TS: import X from 'pkg', require('pkg'), from 'pkg'
+    const matches = [...code.matchAll(/(?:import\s+.*?\s+from\s+|require\s*\(\s*)['"]([^'"./][^'"]*)['"]/g)];
+    matches.forEach(m => {
+      let name = m[1];
+      if (name.startsWith('@')) name = name.split('/').slice(0, 2).join('/');
+      else name = name.split('/')[0];
+      if (!['react','react-dom','next','vue','svelte','express','path','fs','http','https','crypto','os','url','util','stream','events','buffer','child_process','cluster','net','dns','tls','zlib','querystring','string_decoder','timers','console','process','module','__dirname','__filename'].includes(name))
+        packages.add({ name, ecosystem: 'npm' });
+    });
+  }
+  return [...packages].slice(0, 20); // cap at 20 packages per scan
+}
+
+async function checkCVEs(packages) {
+  if (!packages.length) return [];
+  try {
+    const queries = packages.map(p => ({ package: { name: p.name, ecosystem: p.ecosystem } }));
+    const res = await fetch('https://api.osv.dev/v1/querybatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ queries }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const findings = [];
+    (data.results || []).forEach((result, i) => {
+      const vulns = result.vulns || [];
+      if (vulns.length > 0) {
+        const pkg = packages[i];
+        const topVuln = vulns[0];
+        const aliases = (topVuln.aliases || []).filter(a => a.startsWith('CVE-'));
+        const cveId = aliases[0] || topVuln.id;
+        const severity = topVuln.database_specific?.severity || 'HIGH';
+        const isHigh = ['CRITICAL','HIGH'].includes(severity.toUpperCase());
+        findings.push({
+          id: 9000 + i,
+          severity: isHigh ? 'critical' : 'warning',
+          type: 'Vulnerable Dependency',
+          title: `${pkg.name} has known ${severity} vulnerabilities (${cveId})`,
+          line: 'Import / dependency',
+          description: `The package "${pkg.name}" has ${vulns.length} known vulnerabilit${vulns.length === 1 ? 'y' : 'ies'} including ${cveId}. ${topVuln.summary || ''}`,
+          impact: `Attackers can exploit this known vulnerability in your dependency. Update to the latest patched version immediately.`,
+          before: `"${pkg.name}": "<current version>"`,
+          after: `"${pkg.name}": "<latest patched version>" // run: ${pkg.ecosystem === 'PyPI' ? 'pip install --upgrade ' + pkg.name : 'npm update ' + pkg.name}`,
+          fix_explanation: `Update ${pkg.name} to its latest version to patch ${cveId}.`,
+          cve: cveId,
+          vuln_count: vulns.length,
+        });
+      }
+    });
+    return findings;
+  } catch {
+    return []; // CVE check failure is non-fatal
+  }
+}
+
 // ── MAIN HANDLER (Node.js serverless) ──
 export default async function handler(req, res) {
   // CORS headers
@@ -248,6 +319,16 @@ export default async function handler(req, res) {
     } catch (parseErr) {
       console.error('Parse error:', parseErr, 'Raw:', rawText);
       return res.status(500).json({ error: 'Failed to parse scan results. Please try again.' });
+    }
+
+    // CVE dependency check — runs in parallel with Claude, merged here
+    const detectedPackages = extractPackages(code, language || scanResult.language);
+    const cveIssues = await checkCVEs(detectedPackages);
+    if (cveIssues.length > 0) {
+      scanResult.issues = [...(scanResult.issues || []), ...cveIssues];
+      // Adjust score: -18 per critical CVE, -8 per warning CVE
+      const cvePenalty = cveIssues.reduce((sum, i) => sum + (i.severity === 'critical' ? 18 : 8), 0);
+      scanResult.score = Math.max(5, (scanResult.score || 100) - cvePenalty);
     }
 
     return res.status(200).json(scanResult);
