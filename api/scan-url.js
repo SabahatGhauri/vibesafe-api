@@ -75,7 +75,7 @@ async function getUserAndCheckLimit(req) {
   });
   const planData = await planRes.json();
   const plan = (planData[0] && planData[0].plan) || 'free';
-  if (plan === 'pro') return { userId, plan };
+  if (plan === 'pro' || plan === 'team') return { userId, plan };
 
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);
