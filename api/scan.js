@@ -64,20 +64,56 @@ const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_hgCpN6tsYqEiCkyvJm06qQ_1Ddlvznn';
 const FREE_SCAN_LIMIT = 3;
 
-async function getUserAndCheckLimit(req) {
-  const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.replace('Bearer ', '').trim();
-  if (!token) return { error: 'Authentication required. Please sign in.' };
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
+// Resolve the caller to a Supabase user id from either:
+//  - a Supabase session JWT (the website holds one), or
+//  - a long-lived VibeSafe API key `vibesafe_sk_...` (the VS Code extension).
+// Returns { userId, readAuth } where readAuth is the header pair to use for
+// follow-up plan/scan-count reads.
+async function resolveUser(token) {
+  if (token.startsWith('vibesafe_sk_')) {
+    // API key path — resolve to a user id via the SECURITY DEFINER function.
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_user_by_api_key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ k: token }),
+    });
+    if (!res.ok) return { error: 'Invalid API key. Generate a new one at vibesafe.info.' };
+    const userId = await res.json();
+    if (!userId) return { error: 'Invalid API key. Generate a new one at vibesafe.info.' };
+    // Reads for an API-key caller need the service role (no user JWT to satisfy RLS).
+    const readAuth = SERVICE_KEY
+      ? { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` }
+      : null;
+    return { userId, readAuth };
+  }
+
+  // Supabase session JWT path (website).
   const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY }
   });
   if (!userRes.ok) return { error: 'Session expired. Please sign in again.' };
   const userData = await userRes.json();
-  const userId = userData.id;
+  return { userId: userData.id, readAuth: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` } };
+}
+
+async function getUserAndCheckLimit(req) {
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!token) return { error: 'Authentication required. Please sign in.' };
+
+  const resolved = await resolveUser(token);
+  if (resolved.error) return resolved;
+  const { userId, readAuth } = resolved;
+
+  // If we couldn't get read credentials (API key but no service role configured),
+  // allow the scan — the extension user is the account owner. Limit enforcement
+  // still applies on the website path.
+  if (!readAuth) return { userId, plan: 'unknown' };
 
   const planRes = await fetch(`${SUPABASE_URL}/rest/v1/vibesafe_plans?id=eq.${userId}&select=plan`, {
-    headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY }
+    headers: readAuth
   });
   const planData = await planRes.json();
   const plan = (planData[0] && planData[0].plan) || 'free';
@@ -87,7 +123,7 @@ async function getUserAndCheckLimit(req) {
   start.setDate(1); start.setHours(0, 0, 0, 0);
   const countRes = await fetch(
     `${SUPABASE_URL}/rest/v1/scans?user_id=eq.${userId}&created_at=gte.${start.toISOString()}&select=id`,
-    { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Prefer': 'count=exact' } }
+    { headers: { ...readAuth, 'Prefer': 'count=exact' } }
   );
   const countHeader = countRes.headers.get('content-range') || '';
   const count = parseInt(countHeader.split('/')[1] || '0', 10);
