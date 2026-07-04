@@ -32,6 +32,8 @@ alter table extension_events enable row level security;
 
 -- Admin-only aggregate report. SECURITY DEFINER so it reads all rows, but returns
 -- ONLY counts/aggregates (never raw events), and only for the owner account.
+-- Drop first so the return type can change on re-runs.
+drop function if exists get_extension_stats();
 create or replace function get_extension_stats()
 returns json
 language plpgsql
