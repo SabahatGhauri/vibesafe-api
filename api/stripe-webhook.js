@@ -11,6 +11,7 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY; // service r
 // env vars can override/extend them if prices are ever rotated.
 const PRICE_TO_PLAN = {
   'price_1TivyfRo8j5JUlBnRmvWu5Iv': 'pro',   // VibeSafe Pro (monthly)
+  'price_1Tpb97Ro8j5JUlBnHepa3ud6': 'pro',   // VibeSafe Pro founding offer ($14.50/mo)
   'price_1Tiw10Ro8j5JUlBnTFrmPdf7': 'pro',   // VibeSafe Pro (annual)
   'price_1Tiw2LRo8j5JUlBnpS0ydcCY': 'team',  // VibeSafe Team (monthly)
   'price_1Tiw4oRo8j5JUlBnXc3appvc': 'team',  // VibeSafe Team (annual)
