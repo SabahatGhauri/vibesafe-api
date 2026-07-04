@@ -86,7 +86,7 @@ async function resolveUser(token) {
     const readAuth = SERVICE_KEY
       ? { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` }
       : null;
-    return { userId, readAuth };
+    return { userId, readAuth, source: 'vscode_extension' };
   }
 
   // Supabase session JWT path (website).
@@ -95,7 +95,7 @@ async function resolveUser(token) {
   });
   if (!userRes.ok) return { error: 'Session expired. Please sign in again.' };
   const userData = await userRes.json();
-  return { userId: userData.id, readAuth: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` } };
+  return { userId: userData.id, readAuth: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` }, source: 'website' };
 }
 
 async function getUserAndCheckLimit(req) {
@@ -105,19 +105,19 @@ async function getUserAndCheckLimit(req) {
 
   const resolved = await resolveUser(token);
   if (resolved.error) return resolved;
-  const { userId, readAuth } = resolved;
+  const { userId, readAuth, source } = resolved;
 
   // If we couldn't get read credentials (API key but no service role configured),
   // allow the scan — the extension user is the account owner. Limit enforcement
   // still applies on the website path.
-  if (!readAuth) return { userId, plan: 'unknown' };
+  if (!readAuth) return { userId, plan: 'unknown', source };
 
   const planRes = await fetch(`${SUPABASE_URL}/rest/v1/vibesafe_plans?id=eq.${userId}&select=plan`, {
     headers: readAuth
   });
   const planData = await planRes.json();
   const plan = (planData[0] && planData[0].plan) || 'free';
-  if (plan === 'pro' || plan === 'team') return { userId, plan };
+  if (plan === 'pro' || plan === 'team') return { userId, plan, source };
 
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);
@@ -129,9 +129,27 @@ async function getUserAndCheckLimit(req) {
   const count = parseInt(countHeader.split('/')[1] || '0', 10);
 
   if (count >= FREE_SCAN_LIMIT) {
-    return { error: `You have used all ${FREE_SCAN_LIMIT} free scans this month. Upgrade to Pro for unlimited scans.` };
+    return { error: `You have used all ${FREE_SCAN_LIMIT} free scans this month. Upgrade to Pro for unlimited scans.`, userId, source };
   }
-  return { userId, plan };
+  return { userId, plan, source };
+}
+
+// Privacy-safe analytics: record a scan event server-side (metadata only, never code).
+// Fire-and-forget — never blocks or breaks a scan.
+function recordScanEvent(fields) {
+  if (!SERVICE_KEY) return;
+  try {
+    fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SERVICE_KEY,
+        'Authorization': `Bearer ${SERVICE_KEY}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify(fields),
+    }).catch(() => {});
+  } catch (e) { /* analytics must never throw */ }
 }
 
 // ── GITHUB CODE FETCHER ──
@@ -286,13 +304,30 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const body = req.body || {};
+  // A caller may declare its source (e.g. a GitHub Action sends 'github_action').
+  // Otherwise it's inferred: extension keys => vscode_extension, JWT => website.
+  const declaredSource = typeof body.source === 'string' ? body.source : null;
+  const scanType = body.githubUrl ? 'github_url' : 'code';
+  let scanUserId = null;
+  let scanSource = declaredSource || 'website';
+
   try {
     const limitCheck = await getUserAndCheckLimit(req);
+    scanUserId = limitCheck.userId || null;
+    scanSource = declaredSource || limitCheck.source || 'website';
     if (limitCheck.error) {
+      recordScanEvent({
+        user_id: scanUserId,
+        event: 'scan_failed',
+        source: scanSource,
+        scan_type: scanType,
+        success: false,
+        error_message: String(limitCheck.error).slice(0, 200),
+      });
       return res.status(403).json({ error: limitCheck.error });
     }
 
-    const body = req.body || {};
     let { code, language, githubUrl, githubToken } = body;
 
     // GitHub URL scanning
@@ -302,6 +337,7 @@ export default async function handler(req, res) {
         code = fetched.code;
         language = language || fetched.language;
       } catch (ghErr) {
+        recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: 'github_url', success: false, error_message: 'GitHub fetch failed' });
         return res.status(400).json({ error: ghErr.message || 'Could not fetch code from that GitHub URL.' });
       }
     }
@@ -367,10 +403,22 @@ export default async function handler(req, res) {
       scanResult.score = Math.max(5, (scanResult.score || 100) - cvePenalty);
     }
 
+    recordScanEvent({
+      user_id: scanUserId,
+      event: 'scan_success',
+      source: scanSource,
+      scan_type: scanType,
+      language: (language || scanResult.language || '').slice(0, 30),
+      score: Number.isFinite(scanResult.score) ? scanResult.score : null,
+      issues: (scanResult.issues || []).length,
+      extension_version: body.extension_version ? String(body.extension_version).slice(0, 20) : null,
+      success: true,
+    });
     return res.status(200).json(scanResult);
 
   } catch (err) {
     console.error('Scan error:', err);
+    recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: scanType, success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
     return res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
   }
 }
