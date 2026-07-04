@@ -114,23 +114,27 @@ export default async function handler(req, res) {
       // Fallback: no client_reference_id (customer opened the payment link
       // directly) — match their VibeSafe account by checkout email instead.
       if (!userId) {
-        const payerEmail = (session.customer_details && session.customer_details.email) || session.customer_email || '';
+        const payerEmail = ((session.customer_details && session.customer_details.email) || session.customer_email || '').toLowerCase();
         if (payerEmail && SUPABASE_SERVICE_KEY) {
-          const lookupRes = await fetch(
-            `${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=1&email=${encodeURIComponent(payerEmail)}`,
-            { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
-          );
-          if (lookupRes.ok) {
+          // Page through auth users to find the account with this email.
+          // (The GoTrue admin list API's email filter isn't reliable across versions.)
+          for (let page = 1; page <= 10 && !userId; page++) {
+            const lookupRes = await fetch(
+              `${SUPABASE_URL}/auth/v1/admin/users?page=${page}&per_page=200`,
+              { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
+            );
+            if (!lookupRes.ok) break;
             const found = await lookupRes.json();
-            const users = found.users || found || [];
-            const match = Array.isArray(users)
-              ? users.find(u => (u.email || '').toLowerCase() === payerEmail.toLowerCase())
-              : null;
+            const users = found.users || (Array.isArray(found) ? found : []);
+            if (!users.length) break;
+            const match = users.find(u => (u.email || '').toLowerCase() === payerEmail);
             if (match) {
               userId = match.id;
               console.log(`Matched payer by email: ${payerEmail} -> ${userId}`);
             }
+            if (users.length < 200) break; // last page
           }
+          if (!userId) console.warn(`No account found for checkout email: ${payerEmail}`);
         }
       }
       if (!userId) {
