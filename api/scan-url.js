@@ -7,14 +7,16 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const FREE_SCAN_LIMIT = 3;
 
 // Privacy-safe analytics for live-URL scans (metadata only, never response bodies).
-function recordScanEvent(fields) {
+// MUST be awaited: on serverless, un-awaited fetches are killed when the response
+// returns, silently dropping events.
+async function recordScanEvent(fields) {
   if (!SERVICE_KEY) return;
   try {
-    fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
+    await fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Prefer': 'return=minimal' },
       body: JSON.stringify(Object.assign({ source: 'website', scan_type: 'live_url' }, fields)),
-    }).catch(() => {});
+    });
   } catch (e) {}
 }
 
@@ -243,12 +245,12 @@ ${bodyText}
       }),
     }).catch(() => {});
 
-    recordScanEvent({ event: 'scan_success', score: Number.isFinite(result.score) ? result.score : null, issues: (result.issues || []).length, success: true });
+    await recordScanEvent({ event: 'scan_success', score: Number.isFinite(result.score) ? result.score : null, issues: (result.issues || []).length, success: true });
     return res.status(200).json({ ...result, url, finalUrl, headers });
 
   } catch (err) {
     console.error('scan-url error:', err);
-    recordScanEvent({ event: 'scan_failed', success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
+    await recordScanEvent({ event: 'scan_failed', success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
     return res.status(500).json({ error: 'Internal server error.' });
   }
 }

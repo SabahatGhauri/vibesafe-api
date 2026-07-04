@@ -135,11 +135,12 @@ async function getUserAndCheckLimit(req) {
 }
 
 // Privacy-safe analytics: record a scan event server-side (metadata only, never code).
-// Fire-and-forget — never blocks or breaks a scan.
-function recordScanEvent(fields) {
+// MUST be awaited: on serverless, un-awaited fetches are killed when the response
+// returns, silently dropping events. Errors are swallowed so it never breaks a scan.
+async function recordScanEvent(fields) {
   if (!SERVICE_KEY) return;
   try {
-    fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
+    await fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -148,7 +149,7 @@ function recordScanEvent(fields) {
         'Prefer': 'return=minimal',
       },
       body: JSON.stringify(fields),
-    }).catch(() => {});
+    });
   } catch (e) { /* analytics must never throw */ }
 }
 
@@ -317,7 +318,7 @@ export default async function handler(req, res) {
     scanUserId = limitCheck.userId || null;
     scanSource = declaredSource || limitCheck.source || 'website';
     if (limitCheck.error) {
-      recordScanEvent({
+      await recordScanEvent({
         user_id: scanUserId,
         event: 'scan_failed',
         source: scanSource,
@@ -337,7 +338,7 @@ export default async function handler(req, res) {
         code = fetched.code;
         language = language || fetched.language;
       } catch (ghErr) {
-        recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: 'github_url', success: false, error_message: 'GitHub fetch failed' });
+        await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: 'github_url', success: false, error_message: 'GitHub fetch failed' });
         return res.status(400).json({ error: ghErr.message || 'Could not fetch code from that GitHub URL.' });
       }
     }
@@ -403,7 +404,7 @@ export default async function handler(req, res) {
       scanResult.score = Math.max(5, (scanResult.score || 100) - cvePenalty);
     }
 
-    recordScanEvent({
+    await recordScanEvent({
       user_id: scanUserId,
       event: 'scan_success',
       source: scanSource,
@@ -418,7 +419,7 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('Scan error:', err);
-    recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: scanType, success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
+    await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: scanType, success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
     return res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
   }
 }
