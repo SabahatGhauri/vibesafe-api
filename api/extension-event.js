@@ -43,6 +43,14 @@ export default async function handler(req, res) {
     const token = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
     const userId = await resolveUserId(token);
 
+    // Anti-inflation: scan events only count when they resolve to a real user.
+    // (Real scans are recorded server-side by /api/scan; a scan_success arriving
+    // here without a valid key is a spoofed/test POST — drop it silently.)
+    const SCAN_EVENTS = new Set(['scan_success', 'scan_failed']);
+    if (SCAN_EVENTS.has(event) && !userId) {
+      return res.status(200).json({ ok: true, stored: false });
+    }
+
     // Only metadata — hard-cap sizes and never accept code fields.
     const row = {
       user_id: userId || null,
