@@ -26,6 +26,7 @@ export default async function handler(req, res) {
 
     const row = {
       email,
+      name: body.name ? String(body.name).trim().slice(0, 80) : null,
       source: body.source ? String(body.source).slice(0, 40) : 'website',
       magnet: body.magnet ? String(body.magnet).slice(0, 80) : null,
     };

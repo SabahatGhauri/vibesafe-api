@@ -4,12 +4,14 @@
 create table if not exists leads (
   id         uuid primary key default gen_random_uuid(),
   email      text not null,
+  name       text,
   source     text,        -- 'homepage' | 'checklist' | 'extension' | 'scan_result' | ...
   magnet     text,        -- what they opted in for
   note       text,
   converted  boolean default false,
   created_at timestamptz default now()
 );
+alter table leads add column if not exists name text;
 create index if not exists idx_leads_created on leads (created_at desc);
 
 alter table leads enable row level security;
@@ -45,7 +47,7 @@ begin
         ) s),
     'recent', (
         select coalesce(json_agg(row_to_json(r)), '[]'::json) from (
-          select email, source, magnet, converted, created_at
+          select name, email, source, magnet, converted, created_at
           from leads order by created_at desc limit 100
         ) r)
   ) into result;
