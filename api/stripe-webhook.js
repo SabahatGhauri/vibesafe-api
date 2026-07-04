@@ -109,9 +109,32 @@ export default async function handler(req, res) {
   try {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
-      const userId = session.client_reference_id;
+      let userId = session.client_reference_id;
+
+      // Fallback: no client_reference_id (customer opened the payment link
+      // directly) — match their VibeSafe account by checkout email instead.
       if (!userId) {
-        console.warn('checkout.session.completed — no client_reference_id');
+        const payerEmail = (session.customer_details && session.customer_details.email) || session.customer_email || '';
+        if (payerEmail && SUPABASE_SERVICE_KEY) {
+          const lookupRes = await fetch(
+            `${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=1&email=${encodeURIComponent(payerEmail)}`,
+            { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
+          );
+          if (lookupRes.ok) {
+            const found = await lookupRes.json();
+            const users = found.users || found || [];
+            const match = Array.isArray(users)
+              ? users.find(u => (u.email || '').toLowerCase() === payerEmail.toLowerCase())
+              : null;
+            if (match) {
+              userId = match.id;
+              console.log(`Matched payer by email: ${payerEmail} -> ${userId}`);
+            }
+          }
+        }
+      }
+      if (!userId) {
+        console.warn('checkout.session.completed — no client_reference_id and no email match');
         return res.status(200).json({ received: true });
       }
 
