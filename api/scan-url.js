@@ -127,9 +127,14 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  let scanUserId = null;
   try {
     const limitCheck = await getUserAndCheckLimit(req);
-    if (limitCheck.error) return res.status(403).json({ error: limitCheck.error });
+    scanUserId = limitCheck.userId || null;
+    if (limitCheck.error) {
+      await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', success: false, error_message: String(limitCheck.error).slice(0, 200) });
+      return res.status(403).json({ error: limitCheck.error });
+    }
 
     let { url } = req.body || {};
     if (!url || typeof url !== 'string') return res.status(400).json({ error: 'No URL provided.' });
@@ -245,12 +250,12 @@ ${bodyText}
       }),
     }).catch(() => {});
 
-    await recordScanEvent({ event: 'scan_success', score: Number.isFinite(result.score) ? result.score : null, issues: (result.issues || []).length, success: true });
+    await recordScanEvent({ user_id: scanUserId, event: 'scan_success', score: Number.isFinite(result.score) ? result.score : null, issues: (result.issues || []).length, success: true });
     return res.status(200).json({ ...result, url, finalUrl, headers });
 
   } catch (err) {
     console.error('scan-url error:', err);
-    await recordScanEvent({ event: 'scan_failed', success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
+    await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
     return res.status(500).json({ error: 'Internal server error.' });
   }
 }

@@ -375,6 +375,7 @@ export default async function handler(req, res) {
     if (!claudeResponse.ok) {
       const errText = await claudeResponse.text();
       console.error('Claude API error:', errText);
+      await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: scanType, success: false, error_message: 'Scan engine unavailable' });
       return res.status(502).json({ error: 'Scan service temporarily unavailable. Please try again.' });
     }
 
@@ -382,6 +383,7 @@ export default async function handler(req, res) {
     const rawText = claudeData.content && claudeData.content[0] && claudeData.content[0].text;
 
     if (!rawText) {
+      await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: scanType, success: false, error_message: 'Empty scan engine response' });
       return res.status(500).json({ error: 'No response from scan engine' });
     }
 
@@ -391,6 +393,7 @@ export default async function handler(req, res) {
       scanResult = JSON.parse(cleaned);
     } catch (parseErr) {
       console.error('Parse error:', parseErr, 'Raw:', rawText);
+      await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: scanType, success: false, error_message: 'Result parse failure' });
       return res.status(500).json({ error: 'Failed to parse scan results. Please try again.' });
     }
 

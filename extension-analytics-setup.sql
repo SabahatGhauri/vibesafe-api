@@ -52,7 +52,8 @@ begin
   )
   select json_build_object(
     -- People
-    'total_users',     (select count(distinct user_id) from scans),
+    'registered_users', (select count(*) from auth.users),
+    'total_users',     (select count(distinct user_id) from scans where user_id is not null),
     'active_today',    (select count(distinct user_id) from scans where created_at >= now() - interval '1 day'),
     'active_7d',       (select count(distinct user_id) from scans where created_at >= now() - interval '7 days'),
     'active_30d',      (select count(distinct user_id) from scans where created_at >= now() - interval '30 days'),
