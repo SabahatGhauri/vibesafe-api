@@ -9,6 +9,9 @@ const ALLOWED_EVENTS = new Set([
   'extension_installed', 'api_key_saved', 'extension_connected',
   'scan_started', 'scan_success', 'scan_failed',
   'invalid_api_key', 'session_expired',
+  // v1.1.x funnel events
+  'welcome_shown', 'connect_opened', 'offer_shown', 'offer_claimed',
+  'upgrade_clicked', 'announcement_shown', 'announcement_clicked',
 ]);
 
 // Resolve a vibesafe_sk_ key to a user id (best-effort; events still log without one).
