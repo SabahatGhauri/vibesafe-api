@@ -134,11 +134,8 @@ export default async function handler(req, res) {
       const info = { label, url: pageUrl.slice(0, 200), ok: false, title: '', loadMs: 0 };
       const t0 = Date.now();
       try {
-        const resp = await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 18000 }).catch(async () => {
-          // busy pages never go idle — fall back to a plain load
-          return page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 12000 });
-        });
-        await new Promise(r => setTimeout(r, 1500));
+        const resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await new Promise(r => setTimeout(r, 2200));
         info.loadMs = Date.now() - t0;
         info.status = resp ? resp.status() : null;
         info.ok = !!resp && resp.status() < 400;
@@ -196,6 +193,7 @@ export default async function handler(req, res) {
       }
     }
 
+    try { await page.close(); } catch (e) { /* already gone */ }
     await browser.close(); browser = null;
 
     // 3) Claude writes the launch-readiness report from the evidence
