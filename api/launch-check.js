@@ -103,6 +103,16 @@ export default async function handler(req, res) {
   let browser = null;
 
   try {
+    // Warm containers accumulate dead Chrome profiles from earlier runs — sweep
+    // them so repeated checks don't starve the container of disk/sockets.
+    try {
+      const fs = await import('fs');
+      for (const f of fs.readdirSync('/tmp')) {
+        if (f.startsWith('puppeteer_dev_chrome_profile')) {
+          fs.rmSync('/tmp/' + f, { recursive: true, force: true });
+        }
+      }
+    } catch (e) { /* best effort */ }
     // Vercel hides AWS's runtime env vars, so sparticuz skips extracting the
     // NSS system libraries. Hint the runtime so lib extraction + LD_LIBRARY_PATH kick in.
     if (!process.env.AWS_EXECUTION_ENV && !process.env.AWS_LAMBDA_JS_RUNTIME) {
@@ -207,7 +217,9 @@ export default async function handler(req, res) {
     }
 
     try { await page.close(); } catch (e) { /* already gone */ }
+    const proc = browser.process();
     await browser.close(); browser = null;
+    try { if (proc && !proc.killed) proc.kill('SIGKILL'); } catch (e) { /* already dead */ }
 
     // 3) Claude writes the launch-readiness report from the evidence
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -234,7 +246,11 @@ Scoring: start 100; -25 if landing page failed to load; -10 per page error/crash
     return res.status(200).json({ report, evidence, screenshots, url, goal, plan });
 
   } catch (err) {
-    if (browser) try { await browser.close(); } catch (e) {}
+    if (browser) {
+      const proc = browser.process();
+      try { await browser.close(); } catch (e) {}
+      try { if (proc && !proc.killed) proc.kill('SIGKILL'); } catch (e) {}
+    }
     let diag = '';
     try {
       const fs = await import('fs');
