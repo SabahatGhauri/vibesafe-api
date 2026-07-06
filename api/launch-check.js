@@ -109,6 +109,7 @@ export default async function handler(req, res) {
       executablePath: await chromiumPkg.executablePath(CHROMIUM_PACK),
       headless: 'shell',
       defaultViewport: { width: 1280, height: 800 },
+      env: { ...process.env, LD_LIBRARY_PATH: ['/tmp/al2023/lib', '/tmp/lib', process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') },
     });
     const page = await browser.newPage();
 
