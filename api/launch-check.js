@@ -103,6 +103,12 @@ export default async function handler(req, res) {
   let browser = null;
 
   try {
+    // Vercel hides AWS's runtime env vars, so sparticuz skips extracting the
+    // NSS system libraries. Hint the runtime so lib extraction + LD_LIBRARY_PATH kick in.
+    if (!process.env.AWS_EXECUTION_ENV && !process.env.AWS_LAMBDA_JS_RUNTIME) {
+      process.env.AWS_LAMBDA_JS_RUNTIME = 'nodejs22.x';
+      process.env.AWS_EXECUTION_ENV = 'AWS_Lambda_nodejs22.x';
+    }
     chromiumPkg.setGraphicsMode = false;
     browser = await puppeteer.launch({
       args: chromiumPkg.args,
