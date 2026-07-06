@@ -12,6 +12,7 @@ const ALLOWED_EVENTS = new Set([
   // v1.1.x funnel events
   'welcome_shown', 'connect_opened', 'offer_shown', 'offer_claimed',
   'upgrade_clicked', 'announcement_shown', 'announcement_clicked',
+  'fixes_copied',
 ]);
 
 // Resolve a vibesafe_sk_ key to a user id (best-effort; events still log without one).
