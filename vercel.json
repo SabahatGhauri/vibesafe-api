@@ -1,4 +1,7 @@
 {
+  "crons": [
+    { "path": "/api/scan-followup", "schedule": "0 9 * * *" }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
