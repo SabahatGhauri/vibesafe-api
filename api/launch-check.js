@@ -134,7 +134,16 @@ export default async function handler(req, res) {
       const info = { label, url: pageUrl.slice(0, 200), ok: false, title: '', loadMs: 0 };
       const t0 = Date.now();
       try {
-        const resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        let resp;
+        try {
+          resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        } catch (navErr) {
+          // a previous page's client-side redirect can detach the frame mid-nav — retry once
+          if (/detached|Navigating frame/i.test(String(navErr.message))) {
+            await new Promise(r => setTimeout(r, 800));
+            resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+          } else throw navErr;
+        }
         await new Promise(r => setTimeout(r, 2200));
         info.loadMs = Date.now() - t0;
         info.status = resp ? resp.status() : null;
