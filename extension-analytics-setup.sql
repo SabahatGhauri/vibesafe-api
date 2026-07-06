@@ -59,6 +59,7 @@ begin
     'active_30d',      (select count(distinct user_id) from scans where created_at >= now() - interval '30 days'),
     'users_website',   (select count(distinct user_id) from scans where source = 'website'),
     'users_extension', (select count(distinct user_id) from scans where source in ('extension','vscode_extension','cursor')),
+    'users_mcp',       (select count(distinct user_id) from scans where source = 'mcp'),
 
     -- Scans overall
     'scans_total',     (select count(*) from scans),
@@ -75,6 +76,9 @@ begin
     'ext_total',       (select count(*) from scans where source in ('extension','vscode_extension','cursor')),
     'ext_success',     (select count(*) from scans where source in ('extension','vscode_extension','cursor') and event='scan_success'),
     'ext_failed',      (select count(*) from scans where source in ('extension','vscode_extension','cursor') and event='scan_failed'),
+    'mcp_total',       (select count(*) from scans where source='mcp'),
+    'mcp_success',     (select count(*) from scans where source='mcp' and event='scan_success'),
+    'mcp_failed',      (select count(*) from scans where source='mcp' and event='scan_failed'),
 
     'connected_extensions', (select count(distinct user_id) from extension_events where event='api_key_saved'),
 
