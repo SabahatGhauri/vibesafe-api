@@ -9,6 +9,17 @@ function validEmail(e) {
   return typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 200;
 }
 
+// naive per-instance rate limit: 5 submissions/min per IP
+const hits = new Map();
+function limited(ip) {
+  const now = Date.now();
+  const arr = (hits.get(ip) || []).filter(t => now - t < 60000);
+  arr.push(now);
+  hits.set(ip, arr);
+  if (hits.size > 5000) hits.clear();
+  return arr.length > 5;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -18,11 +29,30 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
+
+    // Honeypot: real forms never fill this hidden field — bots do.
+    // Pretend success so the bot moves on.
+    if (body.website) return res.status(200).json({ ok: true, stored: true });
+
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
+    if (limited(ip)) return res.status(429).json({ ok: false, error: 'Too many submissions — try again in a minute.' });
+
     const email = String(body.email || '').trim().toLowerCase();
     if (!validEmail(email)) return res.status(400).json({ ok: false, error: 'Enter a valid email.' });
 
     // If analytics/storage isn't configured, don't hard-fail the visitor.
     if (!SERVICE_KEY) return res.status(200).json({ ok: true, stored: false });
+
+    // Duplicate suppression: same email within 7 days is a no-op (still "ok").
+    const since = new Date(Date.now() - 7 * 86400e3).toISOString();
+    const dupRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/leads?email=eq.${encodeURIComponent(email)}&created_at=gte.${since}&select=id&limit=1`,
+      { headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` } }
+    );
+    if (dupRes.ok) {
+      const dups = await dupRes.json();
+      if (dups.length) return res.status(200).json({ ok: true, stored: true, duplicate: true });
+    }
 
     const row = {
       email,

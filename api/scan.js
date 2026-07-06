@@ -121,12 +121,23 @@ async function getUserAndCheckLimit(req) {
 
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);
-  const countRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/scans?user_id=eq.${userId}&created_at=gte.${start.toISOString()}&select=id`,
-    { headers: { ...readAuth, 'Prefer': 'count=exact' } }
-  );
-  const countHeader = countRes.headers.get('content-range') || '';
-  const count = parseInt(countHeader.split('/')[1] || '0', 10);
+  // Count from the server-recorded events table (covers BOTH website and
+  // extension scans) — the client-written `scans` table misses extension scans,
+  // which let extension users bypass the free limit.
+  let count = 0;
+  if (SERVICE_KEY) {
+    const countRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/extension_events?user_id=eq.${userId}&event=eq.scan_success&created_at=gte.${start.toISOString()}&select=id`,
+      { headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Prefer': 'count=exact' } }
+    );
+    count = parseInt((countRes.headers.get('content-range') || '').split('/')[1] || '0', 10);
+  } else {
+    const countRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/scans?user_id=eq.${userId}&created_at=gte.${start.toISOString()}&select=id`,
+      { headers: { ...readAuth, 'Prefer': 'count=exact' } }
+    );
+    count = parseInt((countRes.headers.get('content-range') || '').split('/')[1] || '0', 10);
+  }
 
   if (count >= FREE_SCAN_LIMIT) {
     return { error: `You have used all ${FREE_SCAN_LIMIT} free scans this month. Upgrade to Pro for unlimited scans.`, userId, source };

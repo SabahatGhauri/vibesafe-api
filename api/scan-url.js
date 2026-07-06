@@ -1,6 +1,8 @@
 // VibeSafe URL/DAST Scanner — Vercel Serverless Function
 // Fetches a live URL and checks security headers, HTTPS, exposed paths, and AI-analyses the response.
 
+import { assertPublicUrl } from '../lib/netguard.js';
+
 const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_hgCpN6tsYqEiCkyvJm06qQ_1Ddlvznn';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -146,11 +148,9 @@ export default async function handler(req, res) {
     try { targetUrl = new URL(url); }
     catch { return res.status(400).json({ error: 'Invalid URL.' }); }
 
-    // Block private/internal addresses
-    const host = targetUrl.hostname;
-    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) {
-      return res.status(400).json({ error: 'Cannot scan private/internal addresses.' });
-    }
+    // Block private/internal addresses (resolves DNS, checks v4+v6+metadata ranges)
+    try { await assertPublicUrl(targetUrl); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
 
     // Fetch the live URL
     let httpRes;
@@ -175,6 +175,15 @@ export default async function handler(req, res) {
       httpRes.text().then(t => t.slice(0, 8000)).catch(() => ''),
       probeSensitivePaths(baseUrl),
     ]);
+
+    // Re-validate after redirects — a public URL must not have bounced us
+    // to internal address space.
+    try {
+      const finalCheck = new URL(httpRes.url || url);
+      if (finalCheck.hostname !== targetUrl.hostname) await assertPublicUrl(finalCheck);
+    } catch (e) {
+      return res.status(400).json({ error: 'The site redirected to a private/internal address — scan blocked.' });
+    }
 
     const isHttps = targetUrl.protocol === 'https:';
     const finalUrl = httpRes.url || url;

@@ -8,6 +8,7 @@ import chromiumPkg from '@sparticuz/chromium-min';
 
 const CHROMIUM_PACK = 'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar';
 import puppeteer from 'puppeteer-core';
+import { assertPublicUrl } from '../lib/netguard.js';
 
 const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_hgCpN6tsYqEiCkyvJm06qQ_1Ddlvznn';
@@ -93,9 +94,8 @@ export default async function handler(req, res) {
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   let target;
   try { target = new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL.' }); }
-  if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(target.hostname)) {
-    return res.status(400).json({ error: 'Cannot check private/internal addresses.' });
-  }
+  try { await assertPublicUrl(target); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
   goal = String(goal || 'General launch readiness').slice(0, 200);
 
   const evidence = { pages: [], consoleErrors: [], failedRequests: [], forms: 0, buttons: 0, links: 0 };
