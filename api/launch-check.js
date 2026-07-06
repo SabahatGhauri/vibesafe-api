@@ -4,7 +4,9 @@
 // MVP scope: passive journey only — never submits forms or clicks destructive
 // buttons on a live app. Free plan: 1 check/month. Pro/Team: unlimited.
 
-import chromiumPkg from '@sparticuz/chromium';
+import chromiumPkg from '@sparticuz/chromium-min';
+
+const CHROMIUM_PACK = 'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar';
 import puppeteer from 'puppeteer-core';
 
 const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
@@ -104,7 +106,7 @@ export default async function handler(req, res) {
     chromiumPkg.setGraphicsMode = false;
     browser = await puppeteer.launch({
       args: chromiumPkg.args,
-      executablePath: await chromiumPkg.executablePath(),
+      executablePath: await chromiumPkg.executablePath(CHROMIUM_PACK),
       headless: 'shell',
       defaultViewport: { width: 1280, height: 800 },
     });
