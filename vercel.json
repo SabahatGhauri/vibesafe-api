@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "api/launch-check.js": { "maxDuration": 60 }
+  },
   "crons": [
     { "path": "/api/scan-followup", "schedule": "0 9 * * *" }
   ],

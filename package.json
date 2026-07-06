@@ -1,5 +1,9 @@
 {
   "name": "vibesafe-api",
   "version": "1.0.0",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@sparticuz/chromium": "^131.0.0",
+    "playwright-core": "^1.49.0"
+  }
 }
