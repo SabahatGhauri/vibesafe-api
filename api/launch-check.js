@@ -119,6 +119,12 @@ export default async function handler(req, res) {
       process.env.AWS_LAMBDA_JS_RUNTIME = 'nodejs22.x';
       process.env.AWS_EXECUTION_ENV = 'AWS_Lambda_nodejs22.x';
     }
+    // The lambda has no system fonts — without one, screenshots render no text.
+    process.env.FONTCONFIG_PATH = process.env.FONTCONFIG_PATH || '/tmp/fonts';
+    try {
+      await chromiumPkg.font('https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf');
+      await chromiumPkg.font('https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Bold.ttf');
+    } catch (e) { console.warn('font load skipped:', e.message); }
     chromiumPkg.setGraphicsMode = false;
     browser = await puppeteer.launch({
       args: chromiumPkg.args,
