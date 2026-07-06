@@ -126,13 +126,15 @@ export default async function handler(req, res) {
       await chromiumPkg.font('https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Bold.ttf');
     } catch (e) { console.warn('font load skipped:', e.message); }
     chromiumPkg.setGraphicsMode = false;
-    browser = await puppeteer.launch({
+    const execPath = await chromiumPkg.executablePath(CHROMIUM_PACK);
+    const launchBrowser = () => puppeteer.launch({
       args: chromiumPkg.args,
-      executablePath: await chromiumPkg.executablePath(CHROMIUM_PACK),
+      executablePath: execPath,
       headless: 'shell',
       defaultViewport: { width: 1280, height: 800 },
       env: { ...process.env, LD_LIBRARY_PATH: ['/tmp/al2023/lib', '/tmp/lib', process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') },
     });
+    browser = await launchBrowser();
     function wirePage(p) {
       p.on('console', m => { if (m.type() === 'error' && evidence.consoleErrors.length < 15) evidence.consoleErrors.push(m.text().slice(0, 300)); });
       p.on('pageerror', e => { if (evidence.consoleErrors.length < 15) evidence.consoleErrors.push('Uncaught: ' + String(e.message).slice(0, 300)); });
@@ -152,14 +154,24 @@ export default async function handler(req, res) {
       const info = { label, url: pageUrl.slice(0, 200), ok: false, title: '', loadMs: 0 };
       const t0 = Date.now();
       try {
+        // Heavy pages can crash the whole browser in the memory-tight lambda.
+        // Recover instead of failing the journey: relaunch and retry once.
+        if (!browser || !browser.connected) {
+          try { if (browser) await browser.close(); } catch (e) { /* dead */ }
+          browser = await launchBrowser();
+          page = wirePage(await browser.newPage());
+        }
         let resp;
         try {
           resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
         } catch (navErr) {
-          // A previous page's scripts can permanently detach the frame. The old
-          // page object is unrecoverable — open a fresh tab and retry there.
-          if (/detached|Navigating frame|Session closed|Target closed/i.test(String(navErr.message))) {
-            try { await page.close(); } catch (e) { /* already dead */ }
+          if (/detached|Navigating frame|Session closed|Target closed|Connection closed|Protocol error/i.test(String(navErr.message))) {
+            if (!browser.connected) {
+              try { await browser.close(); } catch (e) { /* dead */ }
+              browser = await launchBrowser();
+            } else {
+              try { await page.close(); } catch (e) { /* dead */ }
+            }
             page = wirePage(await browser.newPage());
             resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
           } else throw navErr;
