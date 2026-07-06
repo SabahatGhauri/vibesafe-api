@@ -117,18 +117,20 @@ export default async function handler(req, res) {
       defaultViewport: { width: 1280, height: 800 },
       env: { ...process.env, LD_LIBRARY_PATH: ['/tmp/al2023/lib', '/tmp/lib', process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') },
     });
-    const page = await browser.newPage();
-
-    page.on('console', m => { if (m.type() === 'error' && evidence.consoleErrors.length < 15) evidence.consoleErrors.push(m.text().slice(0, 300)); });
-    page.on('pageerror', e => { if (evidence.consoleErrors.length < 15) evidence.consoleErrors.push('Uncaught: ' + String(e.message).slice(0, 300)); });
-    page.on('response', r => {
-      if (r.status() >= 400 && evidence.failedRequests.length < 15) {
-        evidence.failedRequests.push({ url: r.url().slice(0, 200), status: r.status() });
-      }
-    });
-    page.on('requestfailed', r => {
-      if (evidence.failedRequests.length < 15) evidence.failedRequests.push({ url: r.url().slice(0, 200), status: 'failed: ' + (r.failure()?.errorText || 'unknown') });
-    });
+    function wirePage(p) {
+      p.on('console', m => { if (m.type() === 'error' && evidence.consoleErrors.length < 15) evidence.consoleErrors.push(m.text().slice(0, 300)); });
+      p.on('pageerror', e => { if (evidence.consoleErrors.length < 15) evidence.consoleErrors.push('Uncaught: ' + String(e.message).slice(0, 300)); });
+      p.on('response', r => {
+        if (r.status() >= 400 && evidence.failedRequests.length < 15) {
+          evidence.failedRequests.push({ url: r.url().slice(0, 200), status: r.status() });
+        }
+      });
+      p.on('requestfailed', r => {
+        if (evidence.failedRequests.length < 15) evidence.failedRequests.push({ url: r.url().slice(0, 200), status: 'failed: ' + (r.failure()?.errorText || 'unknown') });
+      });
+      return p;
+    }
+    let page = wirePage(await browser.newPage());
 
     async function visit(pageUrl, label) {
       const info = { label, url: pageUrl.slice(0, 200), ok: false, title: '', loadMs: 0 };
@@ -138,9 +140,11 @@ export default async function handler(req, res) {
         try {
           resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
         } catch (navErr) {
-          // a previous page's client-side redirect can detach the frame mid-nav — retry once
-          if (/detached|Navigating frame/i.test(String(navErr.message))) {
-            await new Promise(r => setTimeout(r, 800));
+          // A previous page's scripts can permanently detach the frame. The old
+          // page object is unrecoverable — open a fresh tab and retry there.
+          if (/detached|Navigating frame|Session closed|Target closed/i.test(String(navErr.message))) {
+            try { await page.close(); } catch (e) { /* already dead */ }
+            page = wirePage(await browser.newPage());
             resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
           } else throw navErr;
         }
