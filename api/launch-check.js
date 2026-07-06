@@ -209,8 +209,16 @@ Scoring: start 100; -25 if landing page failed to load; -10 per page error/crash
 
   } catch (err) {
     if (browser) try { await browser.close(); } catch (e) {}
-    console.error('launch-check error:', err);
+    let diag = '';
+    try {
+      const fs = await import('fs');
+      diag = ' [node=' + process.version
+        + ' tmp=' + fs.readdirSync('/tmp').slice(0, 12).join(',')
+        + (fs.existsSync('/tmp/al2023') ? ' al2023=' + fs.readdirSync('/tmp/al2023').join(',') : ' no-al2023')
+        + ' LDLP=' + (process.env.LD_LIBRARY_PATH || 'unset') + ']';
+    } catch (e) { diag = ' [diag failed]'; }
+    console.error('launch-check error:', err, diag);
     await recordCheck(user.id, false);
-    return res.status(500).json({ error: 'Launch Check failed: ' + String(err.message).slice(0, 160) + '. Try again in a minute.' });
+    return res.status(500).json({ error: 'Launch Check failed: ' + String(err.message).slice(0, 160) + diag.slice(0, 400) });
   }
 }
