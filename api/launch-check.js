@@ -5,7 +5,7 @@
 // buttons on a live app. Free plan: 1 check/month. Pro/Team: unlimited.
 
 import chromiumPkg from '@sparticuz/chromium';
-import { chromium as pw } from 'playwright-core';
+import puppeteer from 'puppeteer-core';
 
 const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_hgCpN6tsYqEiCkyvJm06qQ_1Ddlvznn';
@@ -102,12 +102,13 @@ export default async function handler(req, res) {
 
   try {
     chromiumPkg.setGraphicsMode = false;
-    browser = await pw.launch({
+    browser = await puppeteer.launch({
       args: chromiumPkg.args,
       executablePath: await chromiumPkg.executablePath(),
-      headless: true,
+      headless: 'shell',
+      defaultViewport: { width: 1280, height: 800 },
     });
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const page = await browser.newPage();
 
     page.on('console', m => { if (m.type() === 'error' && evidence.consoleErrors.length < 15) evidence.consoleErrors.push(m.text().slice(0, 300)); });
     page.on('pageerror', e => { if (evidence.consoleErrors.length < 15) evidence.consoleErrors.push('Uncaught: ' + String(e.message).slice(0, 300)); });
@@ -125,7 +126,7 @@ export default async function handler(req, res) {
       const t0 = Date.now();
       try {
         const resp = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-        await page.waitForTimeout(2200);
+        await new Promise(r => setTimeout(r, 2200));
         info.loadMs = Date.now() - t0;
         info.status = resp ? resp.status() : null;
         info.ok = !!resp && resp.status() < 400;
@@ -141,7 +142,7 @@ export default async function handler(req, res) {
         evidence.forms += counts.forms; evidence.buttons += counts.buttons; evidence.links += counts.links;
         if (screenshots.length < 3) {
           const buf = await page.screenshot({ type: 'jpeg', quality: 55 });
-          screenshots.push({ label: label + ' — ' + (info.title || pageUrl), data: buf.toString('base64') });
+          screenshots.push({ label: label + ' — ' + (info.title || pageUrl), data: Buffer.from(buf).toString('base64') });
         }
       } catch (e) {
         info.error = String(e.message).slice(0, 200);
