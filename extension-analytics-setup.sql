@@ -60,6 +60,7 @@ begin
     'users_website',   (select count(distinct user_id) from scans where source = 'website'),
     'users_extension', (select count(distinct user_id) from scans where source in ('extension','vscode_extension','cursor')),
     'users_mcp',       (select count(distinct user_id) from scans where source = 'mcp'),
+    'users_ci',        (select count(distinct user_id) from scans where source = 'github_action'),
 
     -- Scans overall
     'scans_total',     (select count(*) from scans),
@@ -79,6 +80,9 @@ begin
     'mcp_total',       (select count(*) from scans where source='mcp'),
     'mcp_success',     (select count(*) from scans where source='mcp' and event='scan_success'),
     'mcp_failed',      (select count(*) from scans where source='mcp' and event='scan_failed'),
+    'ci_total',        (select count(*) from scans where source='github_action'),
+    'ci_success',      (select count(*) from scans where source='github_action' and event='scan_success'),
+    'ci_failed',       (select count(*) from scans where source='github_action' and event='scan_failed'),
 
     'connected_extensions', (select count(distinct user_id) from extension_events where event='api_key_saved'),
 
