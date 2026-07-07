@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/launch-check.js": { "maxDuration": 60 },
-    "api/monitor-scan.js": { "maxDuration": 300 }
+    "api/monitor-scan.js": { "maxDuration": 60 }
   },
   "crons": [
     { "path": "/api/scan-followup", "schedule": "0 9 * * *" },

@@ -89,8 +89,14 @@ export default async function handler(req, res) {
 
   if (dry) return res.status(200).json({ dry: true, count: targets.length, targets: targets.map(t => ({ url: t.url, email: t.email, last_score: t.last_score })) });
 
-  let scanned = 0, alerted = 0, failed = 0;
+  // Stay within the 60s function budget: stop starting new scans near the limit
+  // so we always exit cleanly. Unprocessed URLs stay "due" and are picked up next run.
+  const startedAt = Date.now();
+  const TIME_BUDGET_MS = 50000;
+
+  let scanned = 0, alerted = 0, failed = 0, skipped = 0;
   for (const t of targets) {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) { skipped = targets.length - (scanned + failed); break; }
     try {
       const result = await runDastScan(t.url);
       const score = Number.isFinite(result.score) ? result.score : 0;
@@ -119,5 +125,5 @@ export default async function handler(req, res) {
       failed++;
     }
   }
-  return res.status(200).json({ scanned, alerted, failed, candidates: targets.length });
+  return res.status(200).json({ scanned, alerted, failed, skipped, candidates: targets.length });
 }
