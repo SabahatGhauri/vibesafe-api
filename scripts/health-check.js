@@ -7,6 +7,9 @@
 const API = 'https://vibesafe-api.vercel.app/api';
 const SITE = 'https://www.vibesafe.info';
 const KEY = process.env.VIBESAFE_API_KEY || '';
+// Supabase auth backend (anon/publishable key — public, safe to embed).
+const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_hgCpN6tsYqEiCkyvJm06qQ_1Ddlvznn';
 
 const results = [];
 // sev: 'critical' fails the run; 'warn' is reported but doesn't fail.
@@ -30,7 +33,7 @@ async function group(title, fn) { console.log(`\n${title}`); await fn(); }
 
   // ── 1. WEBSITE PAGES ──
   await group('Website pages (expect 200)', async () => {
-    const pages = ['/', '/dashboard.html', '/faq.html', '/user-guide.html', '/learn.html', '/login', '/how-it-works.html'];
+    const pages = ['/', '/dashboard.html', '/faq.html', '/user-guide.html', '/learn.html', '/how-it-works.html'];
     for (const p of pages) {
       const r = await head(SITE + p);
       record(`GET ${p}`, r.ok, r.ok ? '200' : `got ${r.status || r.error}`);
@@ -63,6 +66,28 @@ async function group(title, fn) { console.log(`\n${title}`); await fn(); }
     // Monitoring endpoint: 401 = deployed & guarded; 404 = not deployed yet.
     const mon = await fetch(`${API}/monitor`, { signal: AbortSignal.timeout(15000) }).then(r => r.status).catch(() => 0);
     record('/monitor deployed', mon === 401, mon === 404 ? 'NOT DEPLOYED (404) — pending Vercel deploy' : `status ${mon}`, 'warn');
+  });
+
+  // ── 2b. LOGIN / AUTH ──
+  await group('Login & authentication', async () => {
+    // The login page itself must load.
+    const page = await head(`${SITE}/login`);
+    record('Login page loads', page.ok, page.ok ? '200' : `got ${page.status}`);
+
+    // Auth backend liveness: a deliberately-wrong sign-in must return a proper
+    // "invalid credentials" (400), which proves Supabase auth is UP and responding.
+    // A 5xx / timeout / 404 here means real users can't sign in.
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+        body: JSON.stringify({ email: 'healthcheck-nobody@vibesafe.info', password: 'definitely-not-a-real-password' }),
+        signal: AbortSignal.timeout(15000),
+      });
+      // 400 = correctly rejected bad creds; 401 also acceptable. 429 = up but rate-limited.
+      const alive = [400, 401, 429].includes(r.status);
+      record('Auth backend responding', alive, alive ? `healthy (rejected bad login with ${r.status})` : `unexpected ${r.status} — sign-in may be broken`);
+    } catch (e) { record('Auth backend responding', false, `auth unreachable: ${e.message}`); }
   });
 
   // ── 3. SCANNER END-TO-END (real scan) ──
