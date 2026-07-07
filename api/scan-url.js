@@ -94,19 +94,8 @@ async function getUserAndCheckLimit(req) {
   const plan = (planData[0] && planData[0].plan) || 'free';
   if (plan === 'pro' || plan === 'team') return { userId, plan };
 
-  const start = new Date();
-  start.setDate(1); start.setHours(0, 0, 0, 0);
-  const countRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/scans?user_id=eq.${userId}&created_at=gte.${start.toISOString()}&select=id`,
-    { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Prefer': 'count=exact' } }
-  );
-  const countHeader = countRes.headers.get('content-range') || '';
-  const count = parseInt(countHeader.split('/')[1] || '0', 10);
-
-  if (count >= FREE_SCAN_LIMIT) {
-    return { error: `You have used all ${FREE_SCAN_LIMIT} free scans this month. Upgrade to Pro for unlimited scans.` };
-  }
-  return { userId, plan };
+  // Live website (DAST) scanning is a Pro feature — reject free accounts.
+  return { userId, plan, upgrade: true, error: 'Live website scanning is a Pro feature. Upgrade to Pro to scan your deployed apps.' };
 }
 
 async function probeSensitivePaths(baseUrl) {
