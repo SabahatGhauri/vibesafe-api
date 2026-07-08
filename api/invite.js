@@ -54,7 +54,7 @@ async function sendInviteEmail({ to, inviterEmail, teamName, inviteToken }) {
       'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
     },
     body: JSON.stringify({
-      from: 'VibeSafe <invites@vibesafe.info>',
+      from: process.env.RESEND_FROM_EMAIL || 'VibeSafe <onboarding@resend.dev>',
       to: [to],
       subject: `${inviterEmail} invited you to their VibeSafe team`,
       html,
