@@ -307,7 +307,7 @@ async function checkCVEs(packages) {
 function looksLikeCode(code) {
   const t = (code || '').trim();
   if (!t) return false;
-  if (/[=(){}\[\].,;:<>/\\"'`|&$#@]/.test(t)) return true;          // code/config punctuation
+  if (/[-=(){}\[\].,;:<>/\\"'`+*%!?~^|&$#@]/.test(t)) return true;  // code/config punctuation or operators
   if (/\b(function|const|let|var|def|class|import|export|from|return|if|else|for|while|public|private|async|await|print|console|select|insert|update|create)\b/i.test(t)) return true;
   if (/\s/.test(t) && t.split(/\s+/).filter(Boolean).length >= 3) return true; // 3+ words (prose/config/markup)
   return false;                                                     // single junk token, no code signal (e.g. "sfgjghry")
@@ -373,7 +373,7 @@ export default async function handler(req, res) {
 
     // Reject obvious non-code before spending an AI call or a free scan.
     if (!looksLikeCode(code)) {
-      return res.status(422).json({ error: "That doesn't look like code to scan. Paste a code snippet or file and try again." });
+      return res.status(422).json({ error: "That doesn't look like valid code — it looks like random text. Paste real code or a file to scan." });
     }
 
     if (code.length > 50000) {
