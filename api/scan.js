@@ -300,6 +300,19 @@ async function checkCVEs(packages) {
   }
 }
 
+// Cheap pre-flight guard: does this input plausibly look like code/config, or is it
+// junk (e.g. "sfgjghry")? Rejecting junk before the AI call saves cost and doesn't
+// burn a user's free scan. Deliberately lenient — real code virtually always has
+// punctuation, a keyword, or multiple tokens, so false positives are near-zero.
+function looksLikeCode(code) {
+  const t = (code || '').trim();
+  if (!t) return false;
+  if (/[=(){}\[\].,;:<>/\\"'`|&$#@]/.test(t)) return true;          // code/config punctuation
+  if (/\b(function|const|let|var|def|class|import|export|from|return|if|else|for|while|public|private|async|await|print|console|select|insert|update|create)\b/i.test(t)) return true;
+  if (/\s/.test(t) && t.split(/\s+/).filter(Boolean).length >= 3) return true; // 3+ words (prose/config/markup)
+  return false;                                                     // single junk token, no code signal (e.g. "sfgjghry")
+}
+
 // ── MAIN HANDLER (Node.js serverless) ──
 export default async function handler(req, res) {
   // CORS headers
@@ -356,6 +369,11 @@ export default async function handler(req, res) {
 
     if (!code || typeof code !== 'string') {
       return res.status(400).json({ error: 'No code provided' });
+    }
+
+    // Reject obvious non-code before spending an AI call or a free scan.
+    if (!looksLikeCode(code)) {
+      return res.status(422).json({ error: "That doesn't look like code to scan. Paste a code snippet or file and try again." });
     }
 
     if (code.length > 50000) {
