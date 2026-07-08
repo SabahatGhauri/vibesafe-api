@@ -7,6 +7,22 @@ const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_hgCpN6tsYqEiCkyvJm06qQ_1Ddlvznn';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const FREE_SCAN_LIMIT = 3;
+const LIVE_SCANS_PER_HOUR = 20; // abuse guard: a live scan hits a third-party host
+
+// Count this user's live-URL scans in the last hour (success or fail) so a single
+// account can't turn the scanner into a traffic source against a target.
+async function recentLiveScanCount(userId) {
+  if (!SERVICE_KEY || !userId) return 0;
+  try {
+    const since = new Date(Date.now() - 3600 * 1000).toISOString();
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/extension_events?user_id=eq.${userId}&scan_type=eq.live_url&created_at=gte.${since}&select=id`,
+      { headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Prefer': 'count=exact', 'Range': '0-0' } }
+    );
+    const range = r.headers.get('content-range') || '*/0';
+    return parseInt(range.split('/')[1], 10) || 0;
+  } catch { return 0; }
+}
 
 // Privacy-safe analytics for live-URL scans (metadata only, never response bodies).
 // MUST be awaited: on serverless, un-awaited fetches are killed when the response
@@ -39,7 +55,13 @@ async function getUserAndCheckLimit(req) {
   });
   const planData = await planRes.json();
   const plan = (planData[0] && planData[0].plan) || 'free';
-  if (plan === 'pro' || plan === 'team') return { userId, plan };
+  if (plan === 'pro' || plan === 'team') {
+    const recent = await recentLiveScanCount(userId);
+    if (recent >= LIVE_SCANS_PER_HOUR) {
+      return { userId, plan, error: `You've hit the limit of ${LIVE_SCANS_PER_HOUR} live scans per hour. Please wait a little and try again.` };
+    }
+    return { userId, plan };
+  }
 
   // Live website (DAST) scanning is a Pro feature — reject free accounts.
   return { userId, plan, upgrade: true, error: 'Live website scanning is a Pro feature. Upgrade to Pro to scan your deployed apps.' };
