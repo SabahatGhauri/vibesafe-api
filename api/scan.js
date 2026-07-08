@@ -362,7 +362,12 @@ export default async function handler(req, res) {
       code = code.slice(0, 50000);
     }
 
-    // Call Claude API securely
+    // Kick off the CVE dependency lookup NOW so it overlaps the Claude call
+    // (OSV can take up to 5s). We await it after Claude returns.
+    const cvePromise = checkCVEs(extractPackages(code, language));
+
+    // Call Claude API securely. The system prompt is cached (5-min TTL) so
+    // repeat scans skip re-processing it — faster and cheaper.
     const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -373,7 +378,9 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 4000,
-        system: SCAN_SYSTEM_PROMPT,
+        system: [
+          { type: 'text', text: SCAN_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+        ],
         messages: [
           {
             role: 'user',
@@ -408,9 +415,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to parse scan results. Please try again.' });
     }
 
-    // CVE dependency check — runs in parallel with Claude, merged here
-    const detectedPackages = extractPackages(code, language || scanResult.language);
-    const cveIssues = await checkCVEs(detectedPackages);
+    // CVE dependency check — started before the Claude call above, awaited here.
+    const cveIssues = await cvePromise;
     if (cveIssues.length > 0) {
       scanResult.issues = [...(scanResult.issues || []), ...cveIssues];
       // Adjust score: -18 per critical CVE, -8 per warning CVE
