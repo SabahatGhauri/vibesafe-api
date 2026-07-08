@@ -111,19 +111,5 @@ export default async function handler(req, res) {
       failed++;
     }
   }
-  // Continuous monitoring runs weekly, but the Vercel Hobby plan allows only ONE
-  // cron job — which is this one. So this daily job dispatches the monitoring
-  // re-scan on Mondays (UTC) by calling the monitor-scan endpoint internally.
-  let monitoring = null;
-  if (new Date().getUTCDay() === 1) {
-    try {
-      const mr = await fetch('https://vibesafe-api.vercel.app/api/monitor-scan', {
-        headers: process.env.CRON_SECRET ? { 'Authorization': `Bearer ${process.env.CRON_SECRET}` } : {},
-        signal: AbortSignal.timeout(55000),
-      });
-      monitoring = await mr.json().catch(() => ({ ok: mr.ok }));
-    } catch (e) { monitoring = { error: String(e.message || 'monitor trigger failed') }; }
-  }
-
-  return res.status(200).json({ sent, failed, candidates: candidates.length, monitoring });
+  return res.status(200).json({ sent, failed, candidates: candidates.length });
 }
