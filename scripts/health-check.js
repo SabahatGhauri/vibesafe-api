@@ -46,6 +46,39 @@ async function group(title, fn) { console.log(`\n${title}`); await fn(); }
     } catch (e) { record('Security headers present', false, e.message, 'warn'); }
   });
 
+  // ── 1b. SEO WATCHDOG — catches regressions that silently tank rankings ──
+  await group('SEO watchdog', async () => {
+    try {
+      const r = await fetch(SITE + '/', { signal: AbortSignal.timeout(15000) });
+      const html = await r.text();
+      // Accidental noindex is the #1 silent ranking killer — flag it CRITICAL.
+      const metaNoindex = /<meta[^>]+name=["']robots["'][^>]*noindex/i.test(html);
+      const xRobots = (r.headers.get('x-robots-tag') || '').toLowerCase();
+      record('Homepage NOT noindex (meta)', !metaNoindex, metaNoindex ? 'FOUND <meta robots noindex> — DEINDEXING RISK' : 'clean');
+      record('Homepage NOT noindex (header)', !xRobots.includes('noindex'), xRobots.includes('noindex') ? `X-Robots-Tag: ${xRobots}` : 'clean');
+      record('Homepage has <title>', /<title>[^<]{5,}<\/title>/i.test(html), '', 'warn');
+      record('Homepage has canonical', /<link[^>]+rel=["']canonical["']/i.test(html), '', 'warn');
+    } catch (e) { record('Homepage SEO fetch', false, e.message); }
+
+    // robots.txt must not block the whole site (Disallow: / with nothing after).
+    try {
+      const rb = await (await fetch(SITE + '/robots.txt', { signal: AbortSignal.timeout(15000) })).text();
+      const blocksAll = /disallow:\s*\/\s*(\r?\n|$)/i.test(rb);
+      record('robots.txt not blocking site', !blocksAll, blocksAll ? 'Disallow: / present — BLOCKS ALL CRAWLING' : 'Allow: /');
+    } catch (e) { record('robots.txt reachable', false, e.message); }
+
+    // sitemap must stay live and not shrink to near-zero (a broken deploy/generate).
+    try {
+      const sm = await fetch(SITE + '/sitemap.xml', { signal: AbortSignal.timeout(15000) });
+      const locs = ((await sm.text()).match(/<loc>/g) || []).length;
+      record('sitemap.xml healthy', sm.status === 200 && locs >= 20, `status ${sm.status}, ${locs} URLs`);
+    } catch (e) { record('sitemap.xml reachable', false, e.message); }
+
+    // favicon must stay fetchable by Googlebot-Image.
+    const fav = await head(SITE + '/favicon.ico');
+    record('favicon.ico reachable', fav.ok, fav.ok ? '200' : `got ${fav.status}`, 'warn');
+  });
+
   // ── 2. API ENDPOINTS ──
   await group('API endpoints', async () => {
     // Public, no-auth endpoints
