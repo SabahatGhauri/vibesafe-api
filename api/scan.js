@@ -34,9 +34,10 @@ Return this exact structure:
 }
 
 PRIORITISE THESE VIBE-CODING VULNERABILITIES (the ones that cause real breaches):
-1. Missing Row-Level Security (RLS) — Supabase/Postgres tables without RLS policies, or app-level-only filtering where the database itself does not enforce that user A cannot read user B's data. This is the #1 cause of vibe-coded app breaches. Flag as CRITICAL.
+1. Missing Row-Level Security (RLS) — Supabase/Postgres tables without RLS policies, or app-level-only filtering where the database itself does not enforce that user A cannot read user B's data. This is the #1 cause of vibe-coded app breaches. Flag as CRITICAL — BUT only when the CODE ITSELF shows evidence of it: a table/policy definition created without RLS, or queries that rely solely on client-side filtering. Do NOT flag this just because client code uses a public anon/publishable key — a public key WITH RLS enabled is the correct, secure Supabase pattern, and you cannot see the database configuration from client-side code. Never report "no evidence of RLS" as a finding; you cannot verify backend config you cannot see.
 2. Open or misconfigured databases — Supabase/Firebase with public read/write, no auth on database access. Flag as CRITICAL.
-3. Exposed secrets — hardcoded API keys, tokens, database passwords, JWT secrets. Flag as CRITICAL.
+3. Exposed SECRET credentials — hardcoded values meant to stay server-side only: service_role keys (sb_secret_, SUPABASE_SERVICE_ROLE_KEY), secret API keys (sk_live_, sk_test_, private tokens), database passwords, JWT SIGNING secrets, cloud provider secret keys. Flag as CRITICAL.
+   IMPORTANT — PUBLIC client keys are NOT secrets and must NOT be flagged critical: Supabase anon/publishable keys (sb_publishable_, the public anon JWT), Firebase apiKey config, PUBLISHABLE Stripe keys (pk_live_ / pk_test_), and anything prefixed NEXT_PUBLIC_ / VITE_ / PUBLIC_ are DESIGNED to be shipped in the browser and appear in the client of every Supabase/Lovable/Bolt/Replit app. Do NOT report these as exposed secrets. At most, mention as a single INFO reminding the user to ensure database RLS is enabled. Flagging a public anon/publishable key as critical is a FALSE POSITIVE.
 4. Broken authentication & access control — missing auth checks, client-side-only authorization, inverted access logic. Flag as CRITICAL.
 5. Hallucinated or non-existent packages — imports of packages that do not exist (slopsquatting risk). Flag as WARNING.
 6. SQL injection, XSS, path traversal. Flag as CRITICAL.
@@ -57,7 +58,16 @@ SCORING:
 - Minimum score is 5
 - If no issues found, score is 100
 
-Be thorough. A non-technical founder is trusting you with the security of their product.
+AVOID FALSE POSITIVES — a scanner that cries wolf loses trust. Do NOT over-flag:
+- Public config is NOT a vulnerability: the Supabase project URL / project ref, publishable/anon keys, Firebase config, and publishable Stripe keys are public by design. Do not flag them, and NEVER report the same public value (e.g. a URL + its key) as multiple separate issues.
+- innerHTML / XSS: only flag when USER-CONTROLLED or EXTERNAL data (URL params, form input, fetched content, database values) flows into innerHTML / document.write / dangerouslySetInnerHTML. Do NOT flag innerHTML that only assigns static, developer-authored strings.
+- CSRF: APIs that send credentials via an Authorization/Bearer header (fetch/XHR, Supabase, most SPAs) are NOT vulnerable to classic CSRF. Do not ask for CSRF tokens there. Only raise CSRF for cookie-session form posts.
+- OAuth redirects built from window.location.origin are fine when the provider validates redirect URLs against an allow-list (Supabase, Auth0, etc.). Do not flag as critical.
+- Missing Content-Security-Policy is INFO at most, and may already be set via an HTTP header you cannot see. Never critical.
+- Weak-but-present controls (e.g. a 6-char minimum password) are WARNING or INFO, not critical.
+- When torn between two severities, choose the LOWER one. Under-flagging a nitpick is far better than raising a false critical. Every "critical" must be a change that, ignored, plausibly leads to a real breach.
+
+Be thorough but precise. A non-technical founder is trusting you — an accurate, calm report builds more trust than an inflated, scary one.
 Only return the JSON object. Nothing else.`;
 
 const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
