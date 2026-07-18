@@ -91,7 +91,8 @@ async function group(title, fn) { console.log(`\n${title}`); await fn(); }
     try {
       const r = await fetch(`${API}/scan-url`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: 'https://example.com' }), signal: AbortSignal.timeout(15000),
+        // source marker keeps this synthetic probe out of the scan analytics
+        body: JSON.stringify({ url: 'https://example.com', source: 'health-check' }), signal: AbortSignal.timeout(15000),
       });
       record('/scan-url auth guard', [401, 403].includes(r.status), `expected 401/403, got ${r.status}`);
     } catch (e) { record('/scan-url auth guard', false, e.message); }

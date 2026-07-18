@@ -29,6 +29,9 @@ async function recentLiveScanCount(userId) {
 // returns, silently dropping events.
 async function recordScanEvent(fields) {
   if (!SERVICE_KEY) return;
+  // Synthetic traffic (scheduled health checks, calibration runs) must not
+  // pollute the analytics that drive the admin dashboard.
+  if (['health-check', 'calibration-test'].includes(fields.source)) return;
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
       method: 'POST',
@@ -75,11 +78,15 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   let scanUserId = null;
+  // Only the known synthetic markers pass through; everything else stays
+  // 'website' so callers can't spoof themselves into other analytics buckets.
+  const declared = (req.body && req.body.source) || '';
+  const eventSource = ['health-check', 'calibration-test'].includes(declared) ? declared : 'website';
   try {
     const limitCheck = await getUserAndCheckLimit(req);
     scanUserId = limitCheck.userId || null;
     if (limitCheck.error) {
-      await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', success: false, error_message: String(limitCheck.error).slice(0, 200) });
+      await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', success: false, source: eventSource, error_message: String(limitCheck.error).slice(0, 200) });
       return res.status(403).json({ error: limitCheck.error });
     }
 

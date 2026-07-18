@@ -160,6 +160,9 @@ async function getUserAndCheckLimit(req) {
 // returns, silently dropping events. Errors are swallowed so it never breaks a scan.
 async function recordScanEvent(fields) {
   if (!SERVICE_KEY) return;
+  // Synthetic traffic (scheduled health checks, calibration runs) must not
+  // pollute the analytics that drive the admin dashboard.
+  if (['health-check', 'calibration-test'].includes(fields.source)) return;
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
       method: 'POST',
