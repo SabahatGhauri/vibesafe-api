@@ -10,11 +10,18 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY; // service r
 // Price IDs are not secrets (they appear in checkout), so they're hardcoded;
 // env vars can override/extend them if prices are ever rotated.
 const PRICE_TO_PLAN = {
+  // Old Stripe account — kept so subscribers who checked out before the
+  // 2026-08-10 account migration don't lose their plan on renewal/cancel.
   'price_1TivyfRo8j5JUlBnRmvWu5Iv': 'pro',   // VibeSafe Pro (monthly)
   'price_1Tpb97Ro8j5JUlBnHepa3ud6': 'pro',   // VibeSafe Pro founding offer ($14.50/mo)
   'price_1Tiw10Ro8j5JUlBnTFrmPdf7': 'pro',   // VibeSafe Pro (annual)
   'price_1Tiw2LRo8j5JUlBnpS0ydcCY': 'team',  // VibeSafe Team (monthly)
   'price_1Tiw4oRo8j5JUlBnXc3appvc': 'team',  // VibeSafe Team (annual)
+  // New Stripe account (created 2026-08-10)
+  'price_1U2msDLEpu5fZeudRQNe4EGz': 'pro',   // VibeSafe Pro (monthly) — $29/mo
+  'price_1U2n1pLEpu5fZeudNofg8esR': 'pro',   // VibeSafe Pro (annual) — $22/mo, billed $264/yr
+  'price_1U2n6BLEpu5fZeudEOepFHek': 'team',  // VibeSafe Team (monthly) — $99/mo
+  'price_1U2n7ULEpu5fZeud0z0Wj668': 'team',  // VibeSafe Team (annual) — $74/mo, billed $888/yr
   [process.env.STRIPE_PRICE_PRO_MONTHLY]:    'pro',
   [process.env.STRIPE_PRICE_PRO_ANNUAL]:     'pro',
   [process.env.STRIPE_PRICE_TEAM_MONTHLY]:   'team',
@@ -142,12 +149,26 @@ export default async function handler(req, res) {
         return res.status(200).json({ received: true });
       }
 
-      // Determine plan from line items or subscription
-      let plan = 'pro'; // default upgrade
+      // Determine plan from line items or subscription.
+      // IMPORTANT: this account also processes checkouts for other products
+      // (e.g. VibeSafe Builder) — a checkout with an unrecognized price is NOT
+      // necessarily a VibeSafe purchase, and must never be defaulted to 'pro'.
+      // Doing that previously let a completely unrelated product's checkout
+      // (matched only by the buyer's email already having a VibeSafe account)
+      // silently grant free VibeSafe Pro access. Only upgrade when the price
+      // is positively identified as a VibeSafe price — by ID, or by amount as
+      // a fallback since `line_items` isn't reliably present on the raw event.
       const priceId = session.metadata?.price_id ||
         (session.line_items?.data?.[0]?.price?.id);
-      if (priceId && PRICE_TO_PLAN[priceId]) {
-        plan = PRICE_TO_PLAN[priceId];
+      let plan = priceId ? PRICE_TO_PLAN[priceId] : undefined;
+      if (!plan && session.currency === 'usd' && typeof session.amount_total === 'number') {
+        // cents — matches the known VibeSafe price points only.
+        const AMOUNT_TO_PLAN = { 2900: 'pro', 26400: 'pro', 1450: 'pro', 9900: 'team', 88800: 'team' };
+        plan = AMOUNT_TO_PLAN[session.amount_total];
+      }
+      if (!plan) {
+        console.warn(`checkout.session.completed — unrecognized price/amount (priceId=${priceId}, amount=${session.amount_total}), not a VibeSafe plan — skipping (user=${userId})`);
+        return res.status(200).json({ received: true });
       }
       // If we have a subscription ID, fetch it to get the price
       if (session.subscription && SUPABASE_SERVICE_KEY) {
