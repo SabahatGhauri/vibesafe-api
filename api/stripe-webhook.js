@@ -29,6 +29,61 @@ const PRICE_TO_PLAN = {
 };
 delete PRICE_TO_PLAN.undefined; // drop unset env keys
 
+function activationEmailHtml(plan) {
+  const planName = plan === 'team' ? 'Team' : 'Pro';
+  const perks = plan === 'team'
+    ? ['Unlimited security scans across your whole team', 'One-click AI fixes for every issue found', 'Shared team dashboard with per-member activity', 'Priority support']
+    : ['Unlimited security scans', 'One-click AI fixes for every issue found', 'All scan types: code, GitHub, live URL', 'Priority support'];
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#080C18;font-family:'Inter',Arial,sans-serif;">
+  <div style="max-width:520px;margin:40px auto;background:#0F1624;border:1px solid #1E2D42;border-radius:16px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#00D4FF,#7C3AED);padding:3px 0 0;"></div>
+    <div style="padding:36px 40px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:28px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#00D4FF,#7C3AED);display:flex;align-items:center;justify-content:center;font-size:18px;">&#128737;&#65039;</div>
+        <span style="font-size:1.2rem;font-weight:700;color:#F1F5F9;">VibeSafe</span>
+      </div>
+      <h1 style="font-size:1.3rem;font-weight:700;color:#10B981;margin:0 0 12px;">You're on VibeSafe ${planName} &#127881;</h1>
+      <p style="color:#94A3B8;font-size:0.95rem;line-height:1.6;margin:0 0 20px;">
+        Your upgrade is active right now &mdash; here's what's unlocked:
+      </p>
+      <ul style="color:#CBD5E1;font-size:0.9rem;line-height:1.8;margin:0 0 24px;padding-left:20px;">
+        ${perks.map(p => `<li>${p}</li>`).join('')}
+      </ul>
+      <a href="https://www.vibesafe.info/dashboard.html" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;">
+        Open my dashboard &rarr;
+      </a>
+      <p style="color:#475569;font-size:0.78rem;margin:28px 0 0;line-height:1.5;">
+        Manage or cancel your subscription any time from your dashboard. Billing questions? Just reply &mdash; a human reads these.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function sendActivationEmail(to, plan) {
+  if (!process.env.RESEND_API_KEY || !to) return; // best-effort — must never break plan activation
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RESEND_API_KEY}` },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM_EMAIL || 'VibeSafe <onboarding@resend.dev>',
+        to: [to],
+        subject: `You're on VibeSafe ${plan === 'team' ? 'Team' : 'Pro'} — here's what's unlocked`,
+        html: activationEmailHtml(plan),
+      }),
+    });
+    if (!r.ok) console.error(`Activation email failed: ${r.status} ${await r.text()}`);
+  } catch (err) {
+    console.error('Activation email send error:', err.message);
+  }
+}
+
 async function upsertPlan(userId, plan) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/vibesafe_plans`, {
     method: 'POST',
@@ -117,11 +172,13 @@ export default async function handler(req, res) {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       let userId = session.client_reference_id;
+      // Captured here (not just inside the email-fallback branch below) so it's
+      // available for the activation email regardless of which path found the user.
+      const payerEmail = ((session.customer_details && session.customer_details.email) || session.customer_email || '').toLowerCase();
 
       // Fallback: no client_reference_id (customer opened the payment link
       // directly) — match their VibeSafe account by checkout email instead.
       if (!userId) {
-        const payerEmail = ((session.customer_details && session.customer_details.email) || session.customer_email || '').toLowerCase();
         if (payerEmail && SUPABASE_SERVICE_KEY) {
           // Page through auth users to find the account with this email.
           // (The GoTrue admin list API's email filter isn't reliable across versions.)
@@ -193,6 +250,8 @@ export default async function handler(req, res) {
         await upsertPlan(userId, plan);
       }
       console.log(`Plan updated: user=${userId} plan=${plan}`);
+      // Best-effort — a failed email must never undo the activation above.
+      await sendActivationEmail(payerEmail, plan);
     }
 
     else if (event.type === 'customer.subscription.updated') {
