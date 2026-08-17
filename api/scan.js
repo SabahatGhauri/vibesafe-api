@@ -150,7 +150,7 @@ async function getUserAndCheckLimit(req) {
   }
 
   if (count >= FREE_SCAN_LIMIT) {
-    return { error: `You have used all ${FREE_SCAN_LIMIT} free scans this month. Upgrade to Pro for unlimited scans.`, userId, source };
+    return { error: `You have used all ${FREE_SCAN_LIMIT} free scans this month. Upgrade to Pro for unlimited scans.`, code: 'limit_reached', userId, source };
   }
   return { userId, plan, source };
 }
@@ -180,6 +180,21 @@ async function recordScanEvent(fields) {
 // ── GITHUB CODE FETCHER ──
 async function fetchGitHubCode(url, githubToken) {
   const trimmed = url.trim();
+
+  // SECURITY: restrict to GitHub's own hosts before doing anything else. The
+  // fallback branch below used to fetch `trimmed` verbatim whenever it didn't
+  // match the github.com/.../blob/... pattern — any other URL (including
+  // internal/link-local/metadata addresses) was fetched server-side with no
+  // validation. Fixed 2026-08-14.
+  let requestedHost;
+  try {
+    requestedHost = new URL(trimmed).hostname.toLowerCase();
+  } catch {
+    throw new Error('That doesn\'t look like a valid URL.');
+  }
+  if (requestedHost !== 'github.com' && requestedHost !== 'raw.githubusercontent.com') {
+    throw new Error('Please paste a link to a file on github.com (e.g. .../blob/main/app.js).');
+  }
 
   const isBareRepo = /github\.com\/[^\/]+\/[^\/]+\/?$/.test(trimmed);
   if (isBareRepo) {
