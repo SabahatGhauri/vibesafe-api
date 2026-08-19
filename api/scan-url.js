@@ -87,7 +87,7 @@ export default async function handler(req, res) {
     scanUserId = limitCheck.userId || null;
     if (limitCheck.error) {
       await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', success: false, source: eventSource, error_message: String(limitCheck.error).slice(0, 200) });
-      return res.status(403).json({ error: limitCheck.error });
+      return res.status(403).json({ error: limitCheck.error, upgrade: !!limitCheck.upgrade });
     }
 
     let { url } = req.body || {};
