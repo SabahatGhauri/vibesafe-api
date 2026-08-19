@@ -25,7 +25,7 @@ async function sendInviteEmail({ to, inviterEmail, teamName, inviteToken }) {
     <div style="background:linear-gradient(135deg,#00D4FF,#7C3AED);padding:3px 0 0;"></div>
     <div style="padding:36px 40px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:28px;">
-        <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#00D4FF,#7C3AED);display:flex;align-items:center;justify-content:center;font-size:18px;">🛡️</div>
+        <img src="https://www.vibesafe.info/favicon-96.png" alt="VibeSafe" width="36" height="36" style="width:36px;height:36px;border-radius:8px;display:block;border:0;">
         <span style="font-size:1.2rem;font-weight:700;color:#F1F5F9;">VibeSafe</span>
       </div>
       <h1 style="font-size:1.35rem;font-weight:700;color:#F1F5F9;margin:0 0 12px;">You've been invited to a team</h1>

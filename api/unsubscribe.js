@@ -24,7 +24,7 @@ function page(title, body) {
 <title>${title} · VibeSafe</title></head>
 <body style="margin:0;background:#080C18;color:#F1F5F9;font-family:Inter,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;">
 <div style="max-width:440px;padding:36px;text-align:center;">
-<div style="font-size:2rem;margin-bottom:12px;">&#128737;&#65039;</div>
+<img src="https://www.vibesafe.info/favicon-96.png" alt="VibeSafe" width="48" height="48" style="width:48px;height:48px;border-radius:10px;display:block;margin:0 auto 14px;border:0;">
 <h1 style="font-size:1.25rem;margin:0 0 10px;">${title}</h1>
 <p style="color:#94A3B8;font-size:0.95rem;line-height:1.6;margin:0 0 20px;">${body}</p>
 <a href="https://www.vibesafe.info" style="color:#00D4FF;text-decoration:none;font-size:0.9rem;">Back to VibeSafe &rarr;</a>
