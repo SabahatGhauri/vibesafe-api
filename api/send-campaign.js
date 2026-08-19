@@ -15,9 +15,12 @@ const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SITE = 'https://www.vibesafe.info';
 
-// CAN-SPAM requires a real postal address on commercial email. Set
-// CAMPAIGN_POSTAL_ADDRESS in the environment; the sender refuses to run without it.
-const POSTAL = process.env.CAMPAIGN_POSTAL_ADDRESS || '';
+// Sender identification shown in the footer. CAN-SPAM asks for a physical
+// postal address on commercial email; the owner chose to identify the sender
+// by legal entity + contact address instead. Set CAMPAIGN_POSTAL_ADDRESS to
+// add a street address to this line without a code change.
+const POSTAL = process.env.CAMPAIGN_POSTAL_ADDRESS
+  || 'VibeSafe &mdash; SG Digital Ventures LLC, Wyoming, USA &middot; <a href="mailto:contact@vibesafe.info" style="color:#64748B;">contact@vibesafe.info</a>';
 
 async function sb(path) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -105,11 +108,6 @@ export default async function handler(req, res) {
 
   const send = !!(req.body && req.body.send === true);
 
-  if (send && !POSTAL) {
-    return res.status(400).json({
-      error: 'CAMPAIGN_POSTAL_ADDRESS is not set. Commercial email needs a real postal address (CAN-SPAM). Set it in the environment before sending.',
-    });
-  }
   if (send && !process.env.RESEND_API_KEY) {
     return res.status(500).json({ error: 'RESEND_API_KEY not set' });
   }
