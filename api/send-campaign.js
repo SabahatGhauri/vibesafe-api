@@ -138,7 +138,12 @@ export default async function handler(req, res) {
   }
 
   const results = { sent: 0, failed: 0, errors: [] };
+  let first = true;
   for (const email of list) {
+    // Resend allows 10 requests/second; an unpaced loop tripped that and
+    // dropped recipients on the first real send. 150ms keeps us under it.
+    if (!first) await new Promise(r => setTimeout(r, 150));
+    first = false;
     const unsubUrl = `${SITE}/api/unsubscribe?email=${encodeURIComponent(email)}&t=${await unsubToken(email)}`;
     try {
       const r = await fetch('https://api.resend.com/emails', {
