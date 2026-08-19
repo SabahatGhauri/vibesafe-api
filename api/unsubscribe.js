@@ -36,13 +36,13 @@ export default async function handler(req, res) {
   const token = String((req.query && req.query.t) || '').trim();
 
   if (!email || !token) {
-    return res.status(400).type('html').send(page('Invalid link', 'This unsubscribe link is incomplete. Please use the link from the bottom of the email.'));
+    res.setHeader('Content-Type','text/html; charset=utf-8'); return res.status(400).send(page('Invalid link', 'This unsubscribe link is incomplete. Please use the link from the bottom of the email.'));
   }
   if (!SERVICE_KEY) {
-    return res.status(500).type('html').send(page('Not available', 'Unsubscribe is not configured on this server. Email contact@vibesafe.info and we will remove you manually.'));
+    res.setHeader('Content-Type','text/html; charset=utf-8'); return res.status(500).send(page('Not available', 'Unsubscribe is not configured on this server. Email contact@vibesafe.info and we will remove you manually.'));
   }
   if (token !== (await unsubToken(email))) {
-    return res.status(403).type('html').send(page('Invalid link', 'This unsubscribe link is not valid. Email contact@vibesafe.info and we will remove you manually.'));
+    res.setHeader('Content-Type','text/html; charset=utf-8'); return res.status(403).send(page('Invalid link', 'This unsubscribe link is not valid. Email contact@vibesafe.info and we will remove you manually.'));
   }
 
   try {
@@ -59,10 +59,10 @@ export default async function handler(req, res) {
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   } catch (err) {
     console.error('Unsubscribe failed:', err.message);
-    return res.status(500).type('html').send(page('Something went wrong', 'We could not record that just now. Email contact@vibesafe.info and we will remove you manually.'));
+    res.setHeader('Content-Type','text/html; charset=utf-8'); return res.status(500).send(page('Something went wrong', 'We could not record that just now. Email contact@vibesafe.info and we will remove you manually.'));
   }
 
-  return res.status(200).type('html').send(page(
+  res.setHeader('Content-Type','text/html; charset=utf-8'); return res.status(200).send(page(
     'You are unsubscribed',
     `<strong>${email}</strong> will no longer receive VibeSafe offers or product updates. You will still get essential account email like payment receipts and security alerts.`
   ));
