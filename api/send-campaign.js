@@ -112,9 +112,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'RESEND_API_KEY not set' });
   }
 
+  // {"only":"you@example.com"} sends to exactly that address instead of the
+  // real list — for proving the send, the rendering and the unsubscribe link
+  // work before anything reaches customers.
+  const only = req.body && typeof req.body.only === 'string' ? req.body.only.trim().toLowerCase() : '';
+
   let list;
   try {
-    list = await recipients();
+    list = only ? [only] : await recipients();
   } catch (err) {
     return res.status(500).json({ error: 'Could not build recipient list: ' + err.message });
   }
