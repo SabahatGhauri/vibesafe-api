@@ -69,11 +69,11 @@ function html(unsubUrl) {
         <span style="font-size:1.2rem;font-weight:700;color:#F1F5F9;">VibeSafe</span>
       </div>
 
-      <h1 style="font-size:1.3rem;font-weight:700;color:#F1F5F9;margin:0 0 12px;">Founding offer: 50% off, locked in for good</h1>
+      <h1 style="font-size:1.3rem;font-weight:700;color:#F1F5F9;margin:0 0 12px;">Founding offer: 50% off your first 3 months</h1>
       <p style="color:#94A3B8;font-size:0.95rem;line-height:1.65;margin:0 0 18px;">
         You have been scanning on the free plan &mdash; 3 scans a month. The founding
-        offer takes VibeSafe Pro to <strong style="color:#10B981;">$14.50/mo</strong>
-        &mdash; half price, locked in for as long as you stay subscribed. Cancel any time.
+        offer takes VibeSafe Pro to <strong style="color:#10B981;">$14.50/mo for your
+        first 3 months</strong> (then $29/mo, cancel any time).
       </p>
 
       <ul style="color:#CBD5E1;font-size:0.9rem;line-height:1.8;margin:0 0 22px;padding-left:20px;">
@@ -132,7 +132,7 @@ export default async function handler(req, res) {
       recipientCount: list.length,
       recipients: list,
       postalAddressSet: !!POSTAL,
-      subject: 'Your founding offer: VibeSafe Pro at 50% off, locked in',
+      subject: 'Your founding offer: 50% off VibeSafe Pro for 3 months',
       previewHtml: html(`${SITE}/api/unsubscribe?email=${encodeURIComponent(sample)}&t=${await unsubToken(sample)}`),
     });
   }
@@ -155,7 +155,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           from: process.env.RESEND_FROM_EMAIL || 'VibeSafe <onboarding@resend.dev>',
           to: [email],
-          subject: 'Your founding offer: VibeSafe Pro at 50% off, locked in',
+          subject: 'Your founding offer: 50% off VibeSafe Pro for 3 months',
           html: html(unsubUrl),
           headers: {
             'List-Unsubscribe': `<${unsubUrl}>`,
