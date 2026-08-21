@@ -22,6 +22,7 @@ const PRICE_TO_PLAN = {
   'price_1U2n1pLEpu5fZeudNofg8esR': 'pro',   // VibeSafe Pro (annual) — $22/mo, billed $264/yr
   'price_1U2n6BLEpu5fZeudEOepFHek': 'team',  // VibeSafe Team (monthly) — $99/mo
   'price_1U2n7ULEpu5fZeud0z0Wj668': 'team',  // VibeSafe Team (annual) — $74/mo, billed $888/yr
+  'price_1U4pSDLEpu5fZeud8FyumDS3': 'pro',   // VibeSafe Pro founding offer — $14.50/mo
   [process.env.STRIPE_PRICE_PRO_MONTHLY]:    'pro',
   [process.env.STRIPE_PRICE_PRO_ANNUAL]:     'pro',
   [process.env.STRIPE_PRICE_TEAM_MONTHLY]:   'team',
@@ -260,9 +261,18 @@ export default async function handler(req, res) {
       const plan = PRICE_TO_PLAN[priceId];
       const status = sub.status;
 
+      // An unmapped price must not mean "do nothing" — that would leave a
+      // lapsed subscriber on a paid plan indefinitely. If the price is not
+      // recognised but the subscription has clearly stopped being active,
+      // still downgrade; only skip when we can neither identify the plan nor
+      // justify a downgrade.
       if (!plan) {
-        console.warn('Unknown price ID in subscription.updated:', priceId);
-        return res.status(200).json({ received: true });
+        const inactive = !['active', 'trialing'].includes(status);
+        if (!inactive) {
+          console.warn('Unknown price ID in subscription.updated (still active, skipping):', priceId);
+          return res.status(200).json({ received: true });
+        }
+        console.warn(`Unknown price ID in subscription.updated (status=${status}) — downgrading anyway:`, priceId);
       }
 
       // Find user by stripe_customer_id
