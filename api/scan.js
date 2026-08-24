@@ -108,6 +108,34 @@ async function resolveUser(token) {
   return { userId: userData.id, readAuth: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` }, source: 'website' };
 }
 
+// Maps the model's free-text issue type onto a fixed taxonomy so the stored
+// corpus can be counted. Ordered: the first pattern that matches wins, so more
+// specific rules must come before broader ones ("Missing Row-Level Security"
+// before the generic auth rule, since both mention access).
+const CATEGORY_RULES = [
+  [/row[- ]?level security|\brls\b/i,                      'Missing Row-Level Security'],
+  [/exposed secret|hardcoded|api key|credential|token/i,   'Exposed Secret'],
+  [/sql injection|sqli/i,                                  'SQL Injection'],
+  [/xss|cross[- ]site scripting/i,                         'Cross-Site Scripting'],
+  [/csrf|cross[- ]site request/i,                          'CSRF'],
+  [/auth|access control|permission|authoriz/i,             'Broken Authentication & Access Control'],
+  [/await|async/i,                                         'Missing Await'],
+  [/input validation|sanitiz|unvalidated/i,                'Missing Input Validation'],
+  [/error handling|unhandled|try.?catch/i,                 'Missing Error Handling'],
+  [/dependency|package|cve|vulnerable lib/i,               'Vulnerable Dependency'],
+  [/security header|csp|content[- ]security/i,             'Missing Security Header'],
+  [/syntax error/i,                                        'Syntax Error'],
+  [/logic error|assignment instead/i,                      'Logic Error'],
+  [/code quality|readability|maintainab/i,                 'Code Quality'],
+];
+
+function canonicalCategory(type) {
+  const t = String(type || '').trim();
+  if (!t) return 'Other';
+  for (const [re, label] of CATEGORY_RULES) if (re.test(t)) return label;
+  return 'Other';
+}
+
 async function getUserAndCheckLimit(req) {
   const authHeader = req.headers['authorization'] || '';
   const token = authHeader.replace('Bearer ', '').trim();
@@ -459,6 +487,17 @@ export default async function handler(req, res) {
       console.error('Parse error:', parseErr, 'Raw:', rawText);
       await recordScanEvent({ user_id: scanUserId, event: 'scan_failed', source: scanSource, scan_type: scanType, success: false, error_message: 'Result parse failure' });
       return res.status(500).json({ error: 'Failed to parse scan results. Please try again.' });
+    }
+
+    // The model writes issue types as free text, so the same finding arrives
+    // under several labels ("Broken Authentication" vs "Broken Authentication &
+    // Access Control", "Missing Await" vs "Missing Async/Await"). That is fine
+    // for a single report the user reads, but it makes the stored corpus
+    // unanalysable — frequency counts split across spellings and understate
+    // every category. `category` is a normalised label written alongside the
+    // model's original `type`, which is preserved untouched for display.
+    if (Array.isArray(scanResult.issues)) {
+      for (const issue of scanResult.issues) issue.category = canonicalCategory(issue.type);
     }
 
     // CVE dependency check — started before the Claude call above, awaited here.
