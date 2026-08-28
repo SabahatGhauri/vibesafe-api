@@ -97,6 +97,31 @@ async function recordUse(ipHash) {
   }
 }
 
+// Mirrors recordScanEvent in /api/scan.js — same table, no user_id since the
+// demo is anonymous. `source` carries the traffic-source tag the page sent
+// (utm_source, referrer host, or 'direct'), which is the only way to answer
+// "which channel actually brings people who scan" without a schema change.
+// MUST be awaited on serverless, and errors must never break the demo.
+async function recordScanEvent(fields) {
+  if (!SERVICE_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/extension_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(fields),
+    });
+  } catch (e) { /* analytics must never throw */ }
+}
+
+function cleanSource(s) {
+  return String(s || 'direct').trim().slice(0, 60) || 'direct';
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -104,6 +129,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { code = '', language = '' } = req.body || {};
+  const source = cleanSource(req.body && req.body.source);
 
   if (!code || typeof code !== 'string' || !code.trim()) {
     return res.status(400).json({ error: 'Paste some code to scan.' });
@@ -120,6 +146,7 @@ export default async function handler(req, res) {
 
   const ipHash = await hashIp(clientIp(req));
   if (await overQuota(ipHash)) {
+    await recordScanEvent({ event: 'demo_scan_blocked', source, scan_type: 'demo', success: false, error_message: 'quota_exceeded' });
     return res.status(429).json({
       error: `You've used your ${DEMO_SCANS_PER_DAY} free demo scans for today. Create a free account for 3 scans a month, history, and one-click fixes.`,
       signup: true,
@@ -151,6 +178,7 @@ export default async function handler(req, res) {
 
     if (!claude.ok) {
       console.error('demo-scan: engine error', claude.status, await claude.text());
+      await recordScanEvent({ event: 'demo_scan_failed', source, scan_type: 'demo', success: false, error_message: 'Scan engine unavailable' });
       return res.status(502).json({ error: 'Scan engine unavailable. Please try again in a moment.' });
     }
 
@@ -161,12 +189,22 @@ export default async function handler(req, res) {
       result = JSON.parse(raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
     } catch {
       console.error('demo-scan: parse failure');
+      await recordScanEvent({ event: 'demo_scan_failed', source, scan_type: 'demo', success: false, error_message: 'Result parse failure' });
       return res.status(502).json({ error: 'Could not read the scan result. Please try again.' });
     }
 
     // Only counts a use once the scan actually succeeded — a failed attempt
     // shouldn't consume someone's quota.
     await recordUse(ipHash);
+    await recordScanEvent({
+      event: 'demo_scan_success',
+      source,
+      scan_type: 'demo',
+      language: language || null,
+      score: typeof result.score === 'number' ? result.score : null,
+      issues: Array.isArray(result.issues) ? result.issues.length : null,
+      success: true,
+    });
 
     return res.status(200).json({
       score: result.score,
@@ -177,6 +215,7 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('demo-scan error:', err);
+    await recordScanEvent({ event: 'demo_scan_failed', source, scan_type: 'demo', success: false, error_message: String(err.message || 'unexpected').slice(0, 200) });
     return res.status(500).json({ error: 'Something went wrong running the scan.' });
   }
 }
