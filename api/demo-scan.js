@@ -45,6 +45,8 @@ Respond with valid JSON only. No markdown, no explanation outside the JSON:
   ]
 }
 
+Also flag missing state handling: a stateful flow (payment, order, subscription, webhook) that only implements the success path with no branch for realistic failure states (payment failed, payment pending, webhook retried, expired, cancelled). Flag as warning. Only when the code shows a real gap — do not require a full state machine for a simple form.
+
 Be accurate. Do not invent issues that are not present. If the code is clean, return an empty issues array and a high score.`;
 
 // Mirrors the guard in /api/scan: reject obvious non-code before paying for a

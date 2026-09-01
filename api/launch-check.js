@@ -240,19 +240,32 @@ export default async function handler(req, res) {
     try { if (proc && !proc.killed) proc.kill('SIGKILL'); } catch (e) { /* already dead */ }
 
     // 3) Claude writes the launch-readiness report from the evidence
+    // Screenshots were already captured for the frontend but never actually
+    // shown to the model -- the report was written blind, from counts alone.
+    // Sending them as image blocks is what makes real UX/flow feedback
+    // possible instead of guessing from "this page has 2 buttons."
+    const reportContent = [
+      { type: 'text', text: `Goal: ${goal}\nApp: ${url}\n\nEvidence from the browsing session:\n${JSON.stringify(evidence, null, 2)}` },
+    ];
+    for (const shot of screenshots) {
+      reportContent.push({ type: 'text', text: `Screenshot — ${shot.label}:` });
+      reportContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: shot.data } });
+    }
+
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 2000,
-        system: `You are VibeSafe Launch Check — you just browsed a founder's deployed app like a first-time user. Write a launch-readiness report for a NON-TECHNICAL founder from the evidence. Respond with valid JSON only:
+        system: `You are VibeSafe Launch Check — you just browsed a founder's deployed app like a first-time user. Write a launch-readiness report for a NON-TECHNICAL founder from the evidence and screenshots. Respond with valid JSON only:
 {"score": <0-100>, "verdict": "<Ready to launch | Almost ready | Not ready yet>", "summary": "<2 sentences, plain English>",
 "worked": ["<thing that worked>", ...],
 "failed": [{"title":"<issue>","severity":"critical|warning|info","why":"<why it matters to users, 1 sentence>","fix":"<what to do, 1 sentence>"}, ...],
 "next_steps": ["<ordered first fix>", "<second>", "<third>"]}
-Scoring: start 100; -25 if landing page failed to load; -10 per page error/crash; -8 per console error group; -5 per failed request group; -5 slow pages (>5s); min 5. Be honest but encouraging. The user's stated goal matters — address it.`,
-        messages: [{ role: 'user', content: `Goal: ${goal}\nApp: ${url}\n\nEvidence from the browsing session:\n${JSON.stringify(evidence, null, 2)}` }],
+Scoring: start 100; -25 if landing page failed to load; -10 per page error/crash; -8 per console error group; -5 per failed request group; -5 slow pages (>5s); min 5.
+Besides crashes and errors, also look at the screenshots for flow/UX friction a first-time user would actually hit: a page with forms=0 and buttons=0 where the goal implies an action is expected (dead end); a page whose h1/title doesn't match what the clicked link text promised (confusing navigation); a form visible in the screenshot with no visible submit control; a page that looks unstyled or broken relative to the others (inconsistent, looks unfinished). Report these in "failed" alongside technical issues, severity "warning" or "info" — do not invent friction that isn't visible in the evidence or screenshots, and do not penalize a page for simply being minimal if nothing is actually broken. Be honest but encouraging. The user's stated goal matters — address it.`,
+        messages: [{ role: 'user', content: reportContent }],
       }),
     });
     if (!claudeRes.ok) throw new Error('report generation unavailable');

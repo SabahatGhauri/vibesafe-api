@@ -44,10 +44,11 @@ PRIORITISE THESE VIBE-CODING VULNERABILITIES (the ones that cause real breaches)
 7. Prompt-injection risks — if the code reads external content (READMEs, issues, user input, fetched web pages) and passes it to an AI/LLM API without sanitisation, flag it. Indirect prompt injection has an 85% success rate and almost no tool checks for it. Flag as CRITICAL.
 8. Logic errors — code that runs but does the wrong thing: inverted conditions, off-by-one errors, wrong comparison operators, incorrect access-control logic. Founders cannot spot these because they did not write the code. Flag as WARNING.
 9. Code bloat — dead code, duplicated logic, unnecessary complexity, fake/stubbed implementations that look real but do nothing. Flag as INFO.
+10. Missing state handling — a stateful flow (payment, order, subscription, invite, upload, webhook) that only implements the success path, with no branch for the realistic failure states: payment failed, payment pending, webhook retried/duplicated, expired, cancelled, empty/zero-result list. AI-generated code is prone to this because it optimises for "the demo works," not "the demo works when Stripe calls back twice." Flag as WARNING. Only flag when the code shows a real stateful flow with an actual gap — do not require a full state machine for a simple CRUD form, and do not flag a flow that already handles its realistic failure case even if it skips rarer ones. If the missing state is itself a security gap (e.g. an unhandled webhook retry that could double-charge or duplicate a row), flag it as CRITICAL under the relevant existing category instead of here.
 
 SEVERITY RULES:
 - critical: RLS issues, open databases, exposed secrets, auth bypass, SQL injection, XSS, path traversal — anything causing data breach
-- warning: missing error handling, missing await, null risks, weak comparisons, hallucinated packages, logic bugs
+- warning: missing error handling, missing await, null risks, weak comparisons, hallucinated packages, logic bugs, missing state handling
 - info: code quality, best practices, performance
 
 SCORING:
@@ -65,6 +66,7 @@ AVOID FALSE POSITIVES — a scanner that cries wolf loses trust. Do NOT over-fla
 - OAuth redirects built from window.location.origin are fine when the provider validates redirect URLs against an allow-list (Supabase, Auth0, etc.). Do not flag as critical.
 - Missing Content-Security-Policy is INFO at most, and may already be set via an HTTP header you cannot see. Never critical.
 - Weak-but-present controls (e.g. a 6-char minimum password) are WARNING or INFO, not critical.
+- Missing state handling: do not flag every payment/order flow just for existing. Only flag when the code plausibly reaches a real failure state (calls a payment/webhook API, has a multi-step flow) and visibly has no branch for it. A single-page contact form or static content has no "states" to miss.
 - When torn between two severities, choose the LOWER one. Under-flagging a nitpick is far better than raising a false critical. Every "critical" must be a change that, ignored, plausibly leads to a real breach.
 
 Be thorough but precise. A non-technical founder is trusting you — an accurate, calm report builds more trust than an inflated, scary one.
@@ -121,6 +123,7 @@ const CATEGORY_RULES = [
   [/auth|access control|permission|authoriz/i,             'Broken Authentication & Access Control'],
   [/await|async/i,                                         'Missing Await'],
   [/input validation|sanitiz|unvalidated/i,                'Missing Input Validation'],
+  [/missing state|unhandled state|payment failed|payment pending|webhook retr/i, 'Missing State Handling'],
   [/error handling|unhandled|try.?catch/i,                 'Missing Error Handling'],
   [/dependency|package|cve|vulnerable lib/i,               'Vulnerable Dependency'],
   [/security header|csp|content[- ]security/i,             'Missing Security Header'],
