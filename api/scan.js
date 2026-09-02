@@ -158,16 +158,33 @@ const OWASP_2025 = {
   // Intentionally unmapped: Missing Await, Logic Error, Syntax Error, Code Quality, Other
 };
 
+// Checked against the model's raw issue type BEFORE the category map, because the
+// canonical taxonomy is coarser than OWASP: it lumps authentication in with access
+// control, and has no bucket at all for CORS, path traversal or webhook verification.
+// Ordered — first match wins, so specific patterns come before general ones.
+const OWASP_TYPE_RULES = [
+  [/path traversal|directory traversal|local file inclusion|\blfi\b/i, 'A01', 'Broken Access Control'],
+  [/\bssrf\b|server[- ]side request forgery/i,                          'A01', 'Broken Access Control'],
+  [/\bidor\b|insecure direct object/i,                                  'A01', 'Broken Access Control'],
+  [/\bcors\b|cross[- ]origin/i,                                         'A02', 'Security Misconfiguration'],
+  [/debug mode|verbose error|stack trace exposed|directory listing/i,   'A02', 'Security Misconfiguration'],
+  [/hallucinat|slopsquat|does not exist|non-existent package/i,         'A03', 'Software Supply Chain Failures'],
+  [/plaintext password|password.*(compar|stored)|weak hash|\bmd5\b|\bsha1\b|unencrypted/i,
+                                                                        'A04', 'Cryptographic Failures'],
+  [/prompt injection|command injection|template injection/i,            'A05', 'Injection'],
+  [/broken authentication|authentication failure|weak password|missing authentication/i,
+                                                                        'A07', 'Authentication Failures'],
+  [/unverified webhook|webhook.*(signature|verif)|signature verification|integrity check/i,
+                                                                        'A08', 'Software and Data Integrity Failures'],
+  [/logging|monitoring|audit trail|alerting/i,                          'A09', 'Security Logging and Alerting Failures'],
+];
+
 function owaspFor(category, type) {
-  const direct = OWASP_2025[category];
-  if (direct) return direct;
-  // A hallucinated / non-existent package is a supply-chain risk even though the
-  // model usually labels it as a package problem rather than a known CVE.
-  if (/hallucinat|slopsquat|does not exist|non-existent package/i.test(String(type || ''))) {
-    return { id: 'A03', name: 'Software Supply Chain Failures' };
+  const t = String(type || '');
+  for (const [re, id, name] of OWASP_TYPE_RULES) {
+    if (re.test(t)) return { id, name };
   }
-  if (/prompt injection/i.test(String(type || ''))) return { id: 'A05', name: 'Injection' };
-  return null;
+  return OWASP_2025[category] || null;
 }
 
 async function getUserAndCheckLimit(req) {
