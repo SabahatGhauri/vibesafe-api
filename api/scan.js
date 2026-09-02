@@ -139,6 +139,37 @@ function canonicalCategory(type) {
   return 'Other';
 }
 
+// Maps our canonical category onto OWASP Top 10:2025 (owasp.org/Top10/2025).
+// Deliberately partial: reliability problems like a missing await or a logic bug
+// are real defects but are NOT OWASP application-security risks, so they map to
+// null rather than being forced into a bucket to make coverage look complete.
+const OWASP_2025 = {
+  'Missing Row-Level Security':             { id: 'A01', name: 'Broken Access Control' },
+  'Broken Authentication & Access Control': { id: 'A01', name: 'Broken Access Control' },
+  'CSRF':                                   { id: 'A01', name: 'Broken Access Control' },
+  'Missing Security Header':                { id: 'A02', name: 'Security Misconfiguration' },
+  'Vulnerable Dependency':                  { id: 'A03', name: 'Software Supply Chain Failures' },
+  'SQL Injection':                          { id: 'A05', name: 'Injection' },
+  'Cross-Site Scripting':                   { id: 'A05', name: 'Injection' },
+  'Missing Input Validation':               { id: 'A05', name: 'Injection' },
+  'Exposed Secret':                         { id: 'A07', name: 'Authentication Failures' },
+  'Missing Error Handling':                 { id: 'A10', name: 'Mishandling of Exceptional Conditions' },
+  'Missing State Handling':                 { id: 'A10', name: 'Mishandling of Exceptional Conditions' },
+  // Intentionally unmapped: Missing Await, Logic Error, Syntax Error, Code Quality, Other
+};
+
+function owaspFor(category, type) {
+  const direct = OWASP_2025[category];
+  if (direct) return direct;
+  // A hallucinated / non-existent package is a supply-chain risk even though the
+  // model usually labels it as a package problem rather than a known CVE.
+  if (/hallucinat|slopsquat|does not exist|non-existent package/i.test(String(type || ''))) {
+    return { id: 'A03', name: 'Software Supply Chain Failures' };
+  }
+  if (/prompt injection/i.test(String(type || ''))) return { id: 'A05', name: 'Injection' };
+  return null;
+}
+
 async function getUserAndCheckLimit(req) {
   const authHeader = req.headers['authorization'] || '';
   const token = authHeader.replace('Bearer ', '').trim();
@@ -500,7 +531,10 @@ export default async function handler(req, res) {
     // every category. `category` is a normalised label written alongside the
     // model's original `type`, which is preserved untouched for display.
     if (Array.isArray(scanResult.issues)) {
-      for (const issue of scanResult.issues) issue.category = canonicalCategory(issue.type);
+      for (const issue of scanResult.issues) {
+        issue.category = canonicalCategory(issue.type);
+        issue.owasp = owaspFor(issue.category, issue.type); // null when not an OWASP risk
+      }
     }
 
     // CVE dependency check — started before the Claude call above, awaited here.
