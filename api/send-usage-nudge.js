@@ -39,7 +39,12 @@ async function sb(path) {
 
 // Everyone with an account, minus paying customers, minus opt-outs — each with
 // the number of free scans they have left this month.
-async function recipients() {
+//
+// `onlyEmail` is for test sends: it returns just that person, and skips the
+// paying/opt-out/quota exclusions so the test still works if the tester is a
+// paying customer or has already used the month's scans. Their scan counts are
+// still the real ones, so the test shows the copy they would genuinely receive.
+async function recipients(onlyEmail) {
   const usersRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=200`, {
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
   });
@@ -69,19 +74,28 @@ async function recipients() {
   const everEvents = await sb('extension_events?event=eq.scan_success&select=user_id');
   const everScanned = new Set(everEvents.map(e => e.user_id).filter(Boolean));
 
+  const target = onlyEmail ? String(onlyEmail).trim().toLowerCase() : null;
+
   const seen = new Set();
   const out = [];
   for (const u of users) {
     const email = String(u.email || '').trim().toLowerCase();
     if (!email || seen.has(email)) continue;
-    if (paying.has(u.id)) continue;
-    if (opted.has(email)) continue;
+
+    if (target) {
+      if (email !== target) continue;     // test send: this person only
+    } else {
+      if (paying.has(u.id)) continue;
+      if (opted.has(email)) continue;
+    }
     seen.add(email);
 
     const used = usedBy.get(u.id) || 0;
     const left = Math.max(0, FREE_SCAN_LIMIT - used);
-    if (left === 0) continue;             // nothing encouraging to say this month
-    out.push({ email, left, newcomer: !everScanned.has(u.id) });
+    // A test send still goes out at 0 left so the copy can be reviewed; a real
+    // campaign skips those people, since there is nothing encouraging to say.
+    if (left === 0 && !target) continue;
+    out.push({ email, left: target ? Math.max(left, 1) : left, newcomer: !everScanned.has(u.id) });
   }
   return out;
 }
@@ -149,12 +163,19 @@ export default async function handler(req, res) {
   if (!SERVICE_KEY) return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY not set' });
 
   const send = !!(req.body && req.body.send === true);
+  // {"only":"you@example.com"} restricts the run to one address. Combined with
+  // {"send":true} that is a test send; on its own it is still a dry run.
+  const only = (req.body && typeof req.body.only === 'string') ? req.body.only : null;
 
   let list;
   try {
-    list = await recipients();
+    list = await recipients(only);
   } catch (err) {
     return res.status(500).json({ error: String(err.message).slice(0, 300) });
+  }
+
+  if (only && list.length === 0) {
+    return res.status(404).json({ error: `No account found for ${only}. Test send aborted.` });
   }
 
   if (!send) {
@@ -163,7 +184,10 @@ export default async function handler(req, res) {
     const tok = async (e) => `${SITE}/api/unsubscribe?email=${encodeURIComponent(e)}&t=${await unsubToken(e)}`;
     return res.status(200).json({
       dryRun: true,
-      note: 'Nothing was sent. POST {"send":true} to actually deliver.',
+      note: only
+        ? `Nothing was sent. POST {"send":true,"only":"${only}"} to deliver this single test.`
+        : 'Nothing was sent. POST {"send":true} to actually deliver.',
+      testMode: !!only,
       recipientCount: list.length,
       neverScanned: list.filter(r => r.newcomer).length,
       returning: list.filter(r => !r.newcomer).length,
@@ -175,7 +199,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const results = { sent: 0, failed: 0, errors: [] };
+  const results = { sent: 0, failed: 0, errors: [], testMode: !!only, recipients: list.map(r => r.email) };
   let first = true;
   for (const r of list) {
     // Resend allows 10 requests/second; 150ms keeps us comfortably under it.
