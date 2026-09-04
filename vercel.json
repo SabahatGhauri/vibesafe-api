@@ -1,19 +1,42 @@
 {
   "functions": {
-    "api/launch-check.js": { "maxDuration": 60 },
-    "api/monitor-scan.js": { "maxDuration": 60 }
+    "api/launch-check.js": {
+      "maxDuration": 60
+    },
+    "api/monitor-scan.js": {
+      "maxDuration": 60
+    }
   },
   "crons": [
-    { "path": "/api/scan-followup", "schedule": "0 9 * * *" },
-    { "path": "/api/monitor-scan", "schedule": "0 8 * * 1" }
+    {
+      "path": "/api/scan-followup",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/monitor-scan",
+      "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/send-inactive-nudge",
+      "schedule": "0 10 * * 2"
+    }
   ],
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
       ]
     }
   ]
