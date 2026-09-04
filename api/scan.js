@@ -123,22 +123,46 @@ async function resolveUser(token) {
 // specific rules must come before broader ones ("Missing Row-Level Security"
 // before the generic auth rule, since both mention access).
 const CATEGORY_RULES = [
+  // Ordered: first match wins, so specific patterns precede general ones.
+  // The security entries below the RLS rule were previously falling through to
+  // 'Other' -- they existed in OWASP_TYPE_RULES but had no category of their
+  // own, so a finding could read "A01 Broken Access Control" while its category
+  // said "Other". 54 of the 147 'Other' issues were critical.
   [/row[- ]?level security|\brls\b/i,                      'Missing Row-Level Security'],
+  [/path traversal|directory traversal|local file inclusion|\blfi\b/i, 'Path Traversal'],
+  [/\bidor\b|insecure direct object/i,                     'Insecure Direct Object Reference'],
+  [/open redirect/i,                                       'Open Redirect'],
+  [/\bssrf\b|server[- ]side request forgery/i,             'Server-Side Request Forgery'],
+  [/\bcors\b|cross[- ]origin/i,                            'CORS Misconfiguration'],
+  [/unverified webhook|webhook.*(signature|verif)|signature verification/i, 'Unverified Webhook'],
+  [/plaintext password|password.*(compar|stored|storage)|weak hash|\bmd5\b|\bsha1\b|unencrypted/i,
+                                                           'Insecure Password Handling'],
+  [/prompt injection|command injection|template injection|code injection|\beval\(/i, 'Code Injection'],
+  [/rate limit/i,                                          'Missing Rate Limiting'],
   [/exposed secret|hardcoded|api key|credential|token/i,   'Exposed Secret'],
   [/sql injection|sqli/i,                                  'SQL Injection'],
   [/xss|cross[- ]site scripting/i,                         'Cross-Site Scripting'],
   [/csrf|cross[- ]site request/i,                          'CSRF'],
   [/auth|access control|permission|authoriz/i,             'Broken Authentication & Access Control'],
   [/await|async/i,                                         'Missing Await'],
-  [/input validation|sanitiz|unvalidated/i,                'Missing Input Validation'],
+  [/input validation|sanitiz|unvalidated|missing validation/i, 'Missing Input Validation'],
   [/missing state|unhandled state|payment failed|payment pending|webhook retr/i, 'Missing State Handling'],
-  [/error handling|unhandled|try.?catch/i,                 'Missing Error Handling'],
+  [/error handling|exception handling|unhandled|try.?catch|error parameter|error variable|missing error response|return on error/i,
+                                                           'Missing Error Handling'],
   [/dependency|package|cve|vulnerable lib/i,               'Vulnerable Dependency'],
-  [/security header|csp|content[- ]security/i,             'Missing Security Header'],
+  [/security header|\bcsp\b|content[- ]security|subresource integrity|referrer policy|x-content-type|noopener/i,
+                                                           'Missing Security Header'],
+  // Not a finding about the user's app -- the scanner could not read the input.
+  // Kept separate so parse failures never inflate a published issue rate.
+  [/invalid code|parse error|truncated|incomplete code|malformed|wrong language|invalid submission|line ending|inconsistent syntax/i,
+                                                           'Unscannable Input'],
   [/syntax error/i,                                        'Syntax Error'],
   [/logic error|assignment instead/i,                      'Logic Error'],
-  [/code quality|readability|maintainab/i,                 'Code Quality'],
+  [/undefined variable|not invoked|invocation|parenthes|missing (function )?argument|semicolon|declaration|implicit global|out.?of.?bounds|type mismatch|runtime error|array index|null reference|dead code|no-?op/i,
+                                                           'Runtime Defect'],
+  [/code quality|readability|maintainab|code style|best practice|code structure/i, 'Code Quality'],
 ];
+
 
 function canonicalCategory(type) {
   const t = String(type || '').trim();
@@ -153,6 +177,15 @@ function canonicalCategory(type) {
 // null rather than being forced into a bucket to make coverage look complete.
 const OWASP_2025 = {
   'Missing Row-Level Security':             { id: 'A01', name: 'Broken Access Control' },
+  'Path Traversal':                         { id: 'A01', name: 'Broken Access Control' },
+  'Insecure Direct Object Reference':       { id: 'A01', name: 'Broken Access Control' },
+  'Open Redirect':                          { id: 'A01', name: 'Broken Access Control' },
+  'Server-Side Request Forgery':            { id: 'A01', name: 'Broken Access Control' },
+  'CORS Misconfiguration':                  { id: 'A02', name: 'Security Misconfiguration' },
+  'Missing Rate Limiting':                  { id: 'A02', name: 'Security Misconfiguration' },
+  'Insecure Password Handling':             { id: 'A04', name: 'Cryptographic Failures' },
+  'Code Injection':                         { id: 'A05', name: 'Injection' },
+  'Unverified Webhook':                     { id: 'A08', name: 'Software and Data Integrity Failures' },
   'Broken Authentication & Access Control': { id: 'A01', name: 'Broken Access Control' },
   'CSRF':                                   { id: 'A01', name: 'Broken Access Control' },
   'Missing Security Header':                { id: 'A02', name: 'Security Misconfiguration' },
