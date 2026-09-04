@@ -447,7 +447,16 @@ export default async function handler(req, res) {
   const body = req.body || {};
   // A caller may declare its source (e.g. a GitHub Action sends 'github_action').
   // Otherwise it's inferred: extension keys => vscode_extension, JWT => website.
-  const declaredSource = typeof body.source === 'string' ? body.source : null;
+  //
+  // SECURITY: recordScanEvent deliberately skips writing an event for the
+  // synthetic sources below, and the free-scan limit is enforced by counting
+  // those events. Since `source` arrives in the request body, a caller that
+  // declared one of those names would run scans that were never recorded and
+  // therefore never counted -- unlimited free scans. Those names are reserved
+  // for internal tooling and are rejected from client input.
+  const RESERVED_SOURCES = ['health-check', 'calibration-test'];
+  const rawSource = typeof body.source === 'string' ? body.source.slice(0, 40) : null;
+  const declaredSource = (rawSource && !RESERVED_SOURCES.includes(rawSource)) ? rawSource : null;
   const scanType = body.githubUrl ? 'github_url' : 'code';
   let scanUserId = null;
   let scanSource = declaredSource || 'website';
