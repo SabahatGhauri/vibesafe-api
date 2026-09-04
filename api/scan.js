@@ -82,7 +82,7 @@ Only return the JSON object. Nothing else.`;
 
 const SUPABASE_URL = 'https://uxsmmpujxbzdgxxburxr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_hgCpN6tsYqEiCkyvJm06qQ_1Ddlvznn';
-const FREE_SCAN_LIMIT = 3;
+const FREE_SCAN_LIMIT = 10;
 
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
