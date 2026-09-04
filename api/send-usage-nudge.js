@@ -114,6 +114,18 @@ function html(r, unsubUrl) {
 
     <a href="${SITE}/dashboard" style="display:inline-block;background:#0F766E;color:#FFFFFF;font-weight:600;font-size:0.95rem;padding:12px 24px;border-radius:8px;text-decoration:none;">Run a scan</a>
 
+    <!-- Launch Check is included on the free plan (1 per month, enforced in
+         api/launch-check.js). Live URL scanning is NOT - it is Pro-only - so it
+         is deliberately absent here: every recipient is on the free plan and
+         would hit a 403. -->
+    <div style="border-top:1px solid #E5E7EB;margin:26px 0 0;padding-top:20px;">
+      <p style="color:#111827;font-size:0.95rem;font-weight:600;margin:0 0 8px;">Already deployed? Check the site itself</p>
+      <p style="color:#374151;font-size:0.94rem;line-height:1.65;margin:0 0 14px;">
+        Your plan also includes <strong style="color:#0F766E;">one free Launch Check a month</strong>. Give it your URL and VibeSafe opens the app in a real browser, clicks through it the way a first-time visitor would, and reports what actually breaks &mdash; dead pages, console errors, failed requests &mdash; with screenshots and a readiness score.
+      </p>
+      <a href="${SITE}/dashboard" style="display:inline-block;border:1px solid #0F766E;color:#0F766E;font-weight:600;font-size:0.92rem;padding:10px 20px;border-radius:8px;text-decoration:none;">Run a Launch Check</a>
+    </div>
+
     <p style="color:#6B7280;font-size:0.88rem;line-height:1.6;margin:22px 0 0;">
       Scanning from VS Code or Cursor instead? <a href="${SITE}/user-guide#vscode" style="color:#0F766E;">Here is how to connect your editor</a> &mdash; it takes about a minute.
     </p>
