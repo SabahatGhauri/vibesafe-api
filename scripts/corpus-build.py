@@ -86,6 +86,9 @@ def api(path, params=None):
                     time.sleep(wait)
                 return json.loads(r.read().decode('utf-8', 'replace'))
         except urllib.error.HTTPError as e:
+            if e.code in (401,):
+                sys.exit('GitHub rejected the token (401). Check GITHUB_TOKEN — '
+                         'a classic PAT is ~40 chars and starts ghp_.')
             if e.code in (403, 429):        # secondary rate limit
                 wait = 20 * (attempt + 1)
                 print(f'    throttled ({e.code}), waiting {wait}s', flush=True)
@@ -107,6 +110,12 @@ def search_candidates():
         for page in range(1, 11):            # code search caps at 1000 results
             d = api('/search/code', {'q': q, 'per_page': 100, 'page': page})
             calls += 1
+            if d is None and page == 1:
+                # Distinguish an auth/permission failure from a genuine empty
+                # result. Treating the first as the second is how a broken run
+                # silently reports zero candidates.
+                sys.exit('GitHub code search failed on the first page. The token is '
+                         'probably invalid or expired — verify $env:GITHUB_TOKEN.')
             if not d or not d.get('items'):
                 break
             for item in d['items']:
@@ -242,6 +251,14 @@ def main():
         'repos': corpus,
     }
     name = f"corpus-{started.strftime('%Y-%m-%d')}.json"
+    if not corpus:
+        sys.exit(f'Refusing to write {name}: the corpus is empty. '
+                 'The cache is intact, so nothing was lost — fix the token and rerun.')
+    if os.path.exists(name):
+        prev = json.load(open(name))
+        if len(prev.get('repos', [])) > len(corpus):
+            os.replace(name, name + '.bak')
+            print(f'  existing {name} was larger; kept as {name}.bak')
     json.dump(out, open(name, 'w'), indent=1)
 
     env_n = sum(1 for r in corpus if r['env_committed'])
