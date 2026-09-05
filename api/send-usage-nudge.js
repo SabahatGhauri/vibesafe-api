@@ -58,6 +58,14 @@ async function recipients(onlyEmail) {
   const optouts = await sb('email_optout?select=email');
   const opted = new Set(optouts.map(o => String(o.email).toLowerCase()));
 
+  // Already-sent log. The cron trigger fires repeatedly; without this the same
+  // people would be mailed on every run.
+  let alreadySent = new Set();
+  try {
+    const prior = await sb('usage_nudge_emails?select=user_id');
+    alreadySent = new Set(prior.map(r => r.user_id));
+  } catch (e) { /* table missing -> treat as nobody sent */ }
+
   // Same rows the limit is enforced against: scan_success, every source.
   const start = new Date();
   start.setDate(1); start.setHours(0, 0, 0, 0);
@@ -87,6 +95,7 @@ async function recipients(onlyEmail) {
     } else {
       if (paying.has(u.id)) continue;
       if (opted.has(email)) continue;
+      if (alreadySent.has(u.id)) continue;
     }
     seen.add(email);
 
@@ -95,7 +104,7 @@ async function recipients(onlyEmail) {
     // A test send still goes out at 0 left so the copy can be reviewed; a real
     // campaign skips those people, since there is nothing encouraging to say.
     if (left === 0 && !target) continue;
-    out.push({ email, left: target ? Math.max(left, 1) : left, newcomer: !everScanned.has(u.id) });
+    out.push({ user_id: u.id, email, left: target ? Math.max(left, 1) : left, newcomer: !everScanned.has(u.id) });
   }
   return out;
 }
@@ -154,7 +163,13 @@ function html(r, unsubUrl) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  // Vercel Cron issues a GET and injects CRON_SECRET itself, which is the only
+  // way to run this without a human reading a Sensitive env var. A GET is
+  // therefore treated as "send to everyone still outstanding" -- safe because
+  // the recipient query excludes anyone already in usage_nudge_emails, so
+  // repeat firings are no-ops.
+  const isCron = req.method === 'GET';
+  if (req.method !== 'POST' && !isCron) return res.status(405).json({ error: 'Method not allowed' });
 
   const secret = process.env.CRON_SECRET;
   if (!secret || (req.headers['authorization'] || '') !== `Bearer ${secret}`) {
@@ -162,10 +177,10 @@ export default async function handler(req, res) {
   }
   if (!SERVICE_KEY) return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY not set' });
 
-  const send = !!(req.body && req.body.send === true);
+  const send = isCron || !!(req.body && req.body.send === true);
   // {"only":"you@example.com"} restricts the run to one address. Combined with
   // {"send":true} that is a test send; on its own it is still a dry run.
-  const only = (req.body && typeof req.body.only === 'string') ? req.body.only : null;
+  const only = (!isCron && req.body && typeof req.body.only === 'string') ? req.body.only : null;
 
   let list;
   try {
@@ -225,6 +240,18 @@ export default async function handler(req, res) {
         }),
       });
       if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+
+      // Record only after Resend confirms, and only for real sends -- a test
+      // send must not mark the owner as done.
+      if (!only && r.user_id) {
+        await fetch(`${SUPABASE_URL}/rest/v1/usage_nudge_emails`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SERVICE_KEY,
+                     Authorization: `Bearer ${SERVICE_KEY}`,
+                     Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({ user_id: r.user_id, email: r.email, sent_at: new Date().toISOString() }),
+        });
+      }
       results.sent++;
     } catch (err) {
       results.failed++;
