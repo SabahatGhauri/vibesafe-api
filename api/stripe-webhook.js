@@ -85,7 +85,7 @@ async function sendActivationEmail(to, plan) {
   }
 }
 
-async function upsertPlan(userId, plan) {
+async function upsertPlan(userId, plan, extra = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/vibesafe_plans`, {
     method: 'POST',
     headers: {
@@ -94,12 +94,26 @@ async function upsertPlan(userId, plan) {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
       'Prefer': 'resolution=merge-duplicates',
     },
-    body: JSON.stringify({ id: userId, plan, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ id: userId, plan, updated_at: new Date().toISOString(), ...extra }),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Supabase upsert failed: ${res.status} ${text}`);
   }
+}
+
+// Subscription events identify the payer by CUSTOMER, but a customer can hold
+// more than one subscription. The plan row therefore has to be read back --
+// including which subscription it is actually paying through -- before any
+// event is allowed to change it.
+async function findPlanRow(customerId) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/vibesafe_plans?stripe_customer_id=eq.${encodeURIComponent(customerId)}`
+    + `&select=id,plan,stripe_subscription_id`,
+    { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
+  );
+  const rows = await res.json();
+  return Array.isArray(rows) && rows[0] ? rows[0] : null;
 }
 
 async function getRawBody(req) {
@@ -275,29 +289,37 @@ export default async function handler(req, res) {
         console.warn(`Unknown price ID in subscription.updated (status=${status}) — downgrading anyway:`, priceId);
       }
 
-      // Find user by stripe_customer_id
-      const userRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/vibesafe_plans?stripe_customer_id=eq.${sub.customer}&select=id`,
-        { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
-      );
-      const users = await userRes.json();
-      if (users && users[0]) {
+      const row = await findPlanRow(sub.customer);
+      if (row) {
         const activePlan = ['active', 'trialing'].includes(status) ? plan : 'free';
-        await upsertPlan(users[0].id, activePlan);
-        console.log(`Subscription updated: user=${users[0].id} plan=${activePlan} status=${status}`);
+        if (activePlan === 'free' && row.stripe_subscription_id && row.stripe_subscription_id !== sub.id) {
+          // Lapsed subscription, but not the one paying for this row.
+          console.log(`Subscription ${sub.id} is ${status}, but user=${row.id} is paying `
+                    + `through ${row.stripe_subscription_id} — leaving plan=${row.plan}`);
+        } else {
+          // An active subscription becomes the one this row is paying through,
+          // so a later cancellation of it can be recognised as the right one.
+          await upsertPlan(row.id, activePlan,
+            { stripe_subscription_id: activePlan === 'free' ? null : sub.id });
+          console.log(`Subscription updated: user=${row.id} plan=${activePlan} status=${status}`);
+        }
       }
     }
 
     else if (event.type === 'customer.subscription.deleted') {
       const sub = event.data.object;
-      const userRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/vibesafe_plans?stripe_customer_id=eq.${sub.customer}&select=id`,
-        { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
-      );
-      const users = await userRes.json();
-      if (users && users[0]) {
-        await upsertPlan(users[0].id, 'free');
-        console.log(`Subscription cancelled: user=${users[0].id} → free`);
+      const row = await findPlanRow(sub.customer);
+      if (row) {
+        // Cancelling one subscription must not revoke a plan granted by
+        // another. A null stored id means there is no evidence of a second
+        // subscription, so the cancellation is taken at face value.
+        if (row.stripe_subscription_id && row.stripe_subscription_id !== sub.id) {
+          console.log(`Subscription ${sub.id} cancelled, but user=${row.id} is paying `
+                    + `through ${row.stripe_subscription_id} — leaving plan=${row.plan}`);
+        } else {
+          await upsertPlan(row.id, 'free', { stripe_subscription_id: null });
+          console.log(`Subscription cancelled: user=${row.id} → free`);
+        }
       }
     }
 
