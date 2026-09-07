@@ -37,7 +37,7 @@ function alertEmailHtml({ url, label, score, criticals, prevScore, prevCriticals
         to <strong style="color:${scoreColor};">${score}/100</strong>${criticals > (prevCriticals || 0) ? ` and now has <strong style="color:#EF4444;">${criticals} critical issue${criticals > 1 ? 's' : ''}</strong>` : ''}.
       </p>
       ${issuesList ? `<ul style="color:#CBD5E1;font-size:0.9rem;line-height:1.6;margin:0 0 22px;padding-left:20px;">${issuesList}</ul>` : ''}
-      <a href="https://www.vibesafe.info/dashboard.html?launch=1" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;">
+      <a href="https://www.vibesafe.info/dashboard?launch=1" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;">
         Review &amp; fix &rarr;
       </a>
       <p style="color:#475569;font-size:0.78rem;margin:26px 0 0;line-height:1.5;">

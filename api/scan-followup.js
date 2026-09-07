@@ -37,10 +37,10 @@ function emailHtml({ score, issues }) {
       <p style="color:#94A3B8;font-size:0.95rem;line-height:1.6;margin:0 0 24px;">
         Re-scan after each fix to watch your score climb. And as an early user, you can lock in unlimited scans + one-click fixes at <strong style="color:#10B981;">50% off &mdash; $14.50/mo</strong>.
       </p>
-      <a href="https://www.vibesafe.info/dashboard.html" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;margin-right:10px;">
+      <a href="https://www.vibesafe.info/dashboard" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;margin-right:10px;">
         Re-scan my app &rarr;
       </a>
-      <a href="https://www.vibesafe.info/claim-offer.html" style="display:inline-block;color:#00D4FF;font-weight:600;font-size:0.9rem;padding:14px 4px;text-decoration:none;">
+      <a href="https://www.vibesafe.info/claim-offer" style="display:inline-block;color:#00D4FF;font-weight:600;font-size:0.9rem;padding:14px 4px;text-decoration:none;">
         Claim 50% off
       </a>
       <p style="color:#475569;font-size:0.78rem;margin:28px 0 0;line-height:1.5;">
@@ -74,7 +74,7 @@ function welcomeHtml() {
         <li><strong style="color:#F1F5F9;">Put VibeSafe in your editor</strong> &mdash; install the <a href="https://marketplace.visualstudio.com/items?itemName=vibesafe-info.vibesafe-scanner" style="color:#00D4FF;">VS Code / Cursor extension</a> and connect it in one click &mdash; then scan any file with Ctrl+Shift+V.</li>
         <li><strong style="color:#F1F5F9;">Before you launch</strong> &mdash; run Launch Check so an AI agent tests your deployed app like a real user would.</li>
       </ol>
-      <a href="https://www.vibesafe.info/dashboard.html" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;">
+      <a href="https://www.vibesafe.info/dashboard" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;">
         Run your first scan &rarr;
       </a>
       <p style="color:#475569;font-size:0.78rem;margin:28px 0 0;line-height:1.5;">

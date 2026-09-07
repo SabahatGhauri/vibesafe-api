@@ -54,7 +54,7 @@ function activationEmailHtml(plan) {
       <ul style="color:#CBD5E1;font-size:0.9rem;line-height:1.8;margin:0 0 24px;padding-left:20px;">
         ${perks.map(p => `<li>${p}</li>`).join('')}
       </ul>
-      <a href="https://www.vibesafe.info/dashboard.html" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;">
+      <a href="https://www.vibesafe.info/dashboard" style="display:inline-block;background:linear-gradient(135deg,#00D4FF,#0891B2);color:#080C18;font-weight:700;font-size:0.95rem;padding:14px 28px;border-radius:9px;text-decoration:none;">
         Open my dashboard &rarr;
       </a>
       <p style="color:#475569;font-size:0.78rem;margin:28px 0 0;line-height:1.5;">
