@@ -19,10 +19,6 @@
     {
       "path": "/api/send-inactive-nudge",
       "schedule": "0 10 * * 2"
-    },
-    {
-      "path": "/api/send-usage-nudge",
-      "schedule": "5,25,45 * * * *"
     }
   ],
   "headers": [
